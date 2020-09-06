@@ -1,0 +1,4 @@
+github.com/mkb218/gosndfile v0.0.0-20171006180803-e0c9ef895ee2 h1:VxuHU1GzpitRcSRQLMsYzmiR4AWli0ZIAwuay3nAdng=
+github.com/mkb218/gosndfile v0.0.0-20171006180803-e0c9ef895ee2/go.mod h1:Bt3M0pOPhXFJld5U1F484ASifG9E1Tych5ukWdGXnxw=
+github.com/runningwild/go-fftw v0.0.0-20170516140804-b67bcf446e82 h1:ppBVNT2/hOSh0u2FXPUi7zlcY1b9UIFgv+XHXe0sV5s=
+github.com/runningwild/go-fftw v0.0.0-20170516140804-b67bcf446e82/go.mod h1:8qZrSH7VP4ebq/Sqd+URBCGReaCSijKrZKA6hkyxaoI=

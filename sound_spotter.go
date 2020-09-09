@@ -46,9 +46,9 @@ type soundSpotter struct {
 	lastHiFeature   int // persist feature parameters for database norming
 	ifaceLoFeature  int // store interface values to change on shingle boundary
 	ifaceHiFeature  int
-	normsNeedUpdate int // flag to indicate that database norms are dirty
-	isMaster        int // flag to indicate master soundspotter, extracts features
-	audioDisabled   int // whether to process audio
+	normsNeedUpdate bool // flag to indicate that database norms are dirty
+	isMaster        int  // flag to indicate master soundspotter, extracts features
+	audioDisabled   int  // whether to process audio
 	basisWidth      int
 	x               ss_sample // SoundSpotter pointer to PD internal buf
 	bufLen          int64
@@ -71,9 +71,9 @@ type soundSpotter struct {
 	matcher          *matcher // shingle matching algorithm
 	featureExtractor *featureExtractor
 
-	pwr_abs_thresh ss_sample // don't match below this threshold
+	pwr_abs_thresh float64   // don't match below this threshold
 	pwr_rel_thresh ss_sample // don't match below this threshold
-	Radius         ss_sample // Search Radius
+	Radius         float64   // Search Radius
 
 	LoK      int // Database start point marker
 	HiK      int // Database end point marker
@@ -82,8 +82,8 @@ type soundSpotter struct {
 	ifaceLoK int
 	ifaceHiK int
 
-	envFollow     ss_sample // amount to follow the input audio's energy envelope
-	betaParameter float32   // parameter for probability function (-1.0f * beta)
+	envFollow     float64 // amount to follow the input audio's energy envelope
+	betaParameter float32 // parameter for probability function (-1.0f * beta)
 
 	soundSpotterStatus SoundSpotterStatus
 	SS_DEBUG           bool
@@ -308,7 +308,7 @@ func (s *soundSpotter) run(n int, ins1, ins2, outs1, outs2 ss_sample) {
 			s.sourceShingles.getSeries(), s.sourcePowers.getSeries(),
 			s.sourceShingles.getRows(), s.getLengthSourceShingles())
 		s.xPtr = s.getAudioDatabaseBufLen()
-		s.normsNeedUpdate = 1
+		s.normsNeedUpdate = true
 		if s.SS_DEBUG {
 			fmt.Printf(" run(EXTRACT) : xPtr=%d, XPtr=%d\n", s.xPtr, s.XPtr)
 		}
@@ -316,7 +316,7 @@ func (s *soundSpotter) run(n int, ins1, ins2, outs1, outs2 ss_sample) {
 		return
 
 	case SPOT:
-		//s.spot(n, ins1, ins2, outs1, outs2)
+		s.spot(n, ins1, ins2, outs1, outs2)
 		return
 
 	case EXTRACTANDSPOT:
@@ -325,6 +325,125 @@ func (s *soundSpotter) run(n int, ins1, ins2, outs1, outs2 ss_sample) {
 
 	default:
 	}
+}
+
+func (s *soundSpotter) spot(n int, ins1, ins2, outs1, outs2 ss_sample) {
+	if s.checkExtracted() == 0 {
+		return // features extracted?
+	}
+	if s.muxi == 0 {
+		s.synchOnShingleStart() // update parameters at shingleStart
+	}
+	// ins2 holds the audio samples, convert ins2 to outs1 (FFT buffer)
+	s.featureExtractor.extractVector(n, ins1, ins2, outs1, &s.inPowers.getSeries()[s.muxi], s.isMaster)
+	// insert MFCC into SeriesOfVectors
+	s.inShingle.insert(outs1, idxT(s.muxi))
+	// insert shingles into Matcher
+	s.matcher.insert(s.inShingle, s.shingleSize, s.sourceShingles, s.XPtr, s.muxi, s.minASB, s.maxASB, s.LoK, s.HiK)
+	// post-insert buffer multiplex increment
+	s.muxi = s.incrementMultiplexer(s.muxi, s.shingleSize)
+	// Do the matching at shingle end
+	if s.muxi == 0 {
+		s.match()
+	}
+	// generate current frame's output sample and update everything
+	s.updateAudioOutputBuffers(outs2)
+}
+
+func (s *soundSpotter) incrementMultiplexer(multiplex, sz int) int {
+	return (multiplex + 1) % sz
+}
+
+func (s *soundSpotter) checkExtracted() int {
+	if s.XPtr == 0 || s.getAudioDatabaseBufLen() == 0 {
+		fmt.Printf("You must extract some features from source material first! XPtr=%d,xPtr=%du", s.XPtr, s.getAudioDatabaseBufLen())
+		s.setStatus(STOP)
+		return 0
+	} else {
+		return 1
+	}
+}
+
+// Perform matching on shingle boundary
+func (s *soundSpotter) match() {
+	// zero output buffer in case we don't match anything
+	s.zeroBuf(s.audioOutputBuffer, uint64(s.WindowLength*s.shingleSize*s.numChannels))
+	// calculate powers for detecting silence and balancing output with input
+	seriesMean(s.inPowers.getSeries(), idxT(s.shingleSize), idxT(s.shingleSize))
+	//	SeriesOfVectors::seriesSqrt(inPowers->getSeries(),shingleSize,shingleSize);
+	inPwMn := s.inPowers.getSeries()[0]
+	if s.SS_DEBUG {
+		fmt.Printf(" match : lastWinner=%d, winner=%d, inPwMn=%f\n", s.lastWinner, s.winner, inPwMn)
+	}
+	if inPwMn > s.pwr_abs_thresh {
+		s.lastWinner = s.winner // preserve previous state for cross-fading audio output
+		// matched filter matching to get winning database shingle
+		s.winner = s.matcher.match(s.Radius, s.shingleSize, s.XPtr, s.LoK, s.HiK, s.queueSize,
+			inPwMn, s.sourcePowersCurrent.getSeries(), s.pwr_abs_thresh)
+		if s.winner > -1 {
+			s.sampleBuf() // fill output audioOutputBuffer with matched source frames
+		}
+	}
+}
+
+// update() take care of the current DSP frame output buffer
+//
+// pre-conditions
+//      multiplexer index (muxi) must be an integer (integral type)
+// post-conditions
+//      n samples ready in outs2 buffer
+func (s *soundSpotter) updateAudioOutputBuffers(outSamps ss_sample) {
+	p2 := s.muxi * s.WindowLength * s.numChannels // so that this is synchronized on match boundaries
+	p1 := 0
+	nn := s.WindowLength * s.numChannels
+	for ; nn > 0; nn-- {
+		outSamps[p1] = s.audioOutputBuffer[p2] // multi-channel output
+		p1++
+		p2++
+	}
+}
+
+// sampleBuf() copy n*shingleHop to audioOutputBuffer from best matching segment in source buffer x[]
+func (s *soundSpotter) sampleBuf() {
+	p := 0 // MULTI-CHANNEL OUTPUT
+	q := s.winner * s.WindowLength * s.numChannels
+	env1 := s.inPowers.getSeries()[0]
+	env2 := s.sourcePowers.getSeries()[s.winner]
+	// Envelope follow factor is alpha * sqrt(env1/env2) + (1-alpha)
+	// sqrt(env2) has already been calculated, only take sqrt(env1) here
+	alpha := s.envFollow*math.Sqrt(env1/env2) + (1 - s.envFollow)
+	if s.winner > -1 {
+		// Copy winning samples to output buffer, these could be further processed
+		nn := s.WindowLength * s.shingleSize * s.numChannels
+		for ; nn > 0; nn-- {
+			s.audioOutputBuffer[p] = alpha * s.x[q]
+			p++
+			q++
+		}
+		// Cross-fade between current output shingle and one frame past end
+		// of last winning shingle added to beginning of current
+		if s.lastWinner > -1 && s.lastWinner < s.XPtr-s.shingleSize-1 {
+			p = 0                                                               // first scanning pointer
+			q = (s.lastWinner + s.shingleSize) * s.WindowLength * s.numChannels // one past end of last output buffer
+			p1 := s.winner * s.WindowLength * s.numChannels                     // this winner (first frame)
+			w1 := 0                                                             // forwards half-hamming pointer
+			w2 := s.WindowLength - 1                                            // backwards half-hamming pointer
+			nn = s.WindowLength                                                 // first audio output buffer only
+			c := 0
+			for ; nn > 0; nn-- {
+				c = s.numChannels
+				for ; c > 0; c-- {
+					s.audioOutputBuffer[p] = alpha*s.x[p1]*s.hammingWin2[w1] + s.lastAlpha*s.x[q]*s.hammingWin2[w2]
+					p++
+					p1++
+					q++
+				}
+				w1++
+				w2--
+			}
+		}
+	}
+	s.lastAlpha = alpha
 }
 
 func (s *soundSpotter) resetShingles(newSize int) int {
@@ -341,14 +460,18 @@ func (s *soundSpotter) resetShingles(newSize int) int {
 		s.sourcePowersCurrent = &seriesOfVectors{M: idxT(newSize), N: idxT(1)}
 		DEBUGINFO("allocate matcher...")
 		MAX_SHINGLE_SIZE := SS_MAX_SHINGLE_SZ
-		s.matcher = &matcher{maxShingleSize: MAX_SHINGLE_SIZE, maxDBSize: newSize}
+		s.matcher = &matcher{
+			maxShingleSize: MAX_SHINGLE_SIZE,
+			maxDBSize:      newSize,
+			frameHashTable: make([]int, newSize),
+		}
 	}
 
 	s.resetBufPtrs() // fill shingles with zeros and set buffer pointers to zero
 	return newSize
 }
 
-// perform reset on new soundfile load or extract
+// perform reset on new sound file load or extract
 func (s *soundSpotter) resetMatchBuffer() {
 	s.muxi = 0        // multiplexer index
 	s.lastAlpha = 0.0 // crossfade coefficient
@@ -360,7 +483,7 @@ func (s *soundSpotter) resetMatchBuffer() {
 	if s.matcher != nil {
 		s.matcher.clearFrameQueue()
 	}
-	s.normsNeedUpdate = 1
+	s.normsNeedUpdate = true
 	if s.SS_DEBUG {
 		fmt.Printf("len: %d\n", s.getAudioDatabaseBufLen())
 		fmt.Printf("frm: %d\n", s.getAudioDatabaseFrames())
@@ -368,5 +491,50 @@ func (s *soundSpotter) resetMatchBuffer() {
 		fmt.Printf("stat: %d\n", s.getStatus())
 		fmt.Printf("quSz: %d\n", s.queueSize)
 		fmt.Printf("shSz: %d\n", s.shingleSize)
+	}
+}
+
+func (s *soundSpotter) synchOnShingleStart() {
+	if s.muxi == 0 { // parameters and statistics must only change on match boundaries
+		s.LoK = s.ifaceLoK
+		s.HiK = s.ifaceHiK
+		s.minASB = s.ifaceLoFeature
+		s.maxASB = s.ifaceHiFeature
+		s.shingleSize = s.ifaceShingleSize
+		s.normsNeedUpdate = s.normsNeedUpdate || !(s.lastLoFeature == s.minASB &&
+			s.lastHiFeature == s.maxASB &&
+			s.lastShingleSize == s.shingleSize &&
+			s.lastLoK == s.LoK &&
+			s.lastHiK == s.HiK)
+		// update database statistics based on current search parameters
+		if s.normsNeedUpdate {
+			// update the power threshold data
+			if s.shingleSize != s.lastShingleSize {
+				s.sourcePowersCurrent.copy(s.sourcePowers)
+				seriesMean(s.sourcePowersCurrent.getSeries(), idxT(s.shingleSize),
+					idxT(s.getLengthSourceShingles()))
+				//				SeriesOfVectors::seriesSqrt(sourcePowersCurrent->getSeries(),shingleSize,
+				//					getLengthSourceShingles());
+				s.lastShingleSize = s.shingleSize
+				s.matcher.clearFrameQueue()
+			}
+			// update the database norms for new parameters
+			s.matcher.updateDatabaseNorms(s.sourceShingles, s.shingleSize, s.getLengthSourceShingles(),
+				s.minASB, s.maxASB, s.LoK, s.HiK)
+			// set the change indicators
+			s.normsNeedUpdate = false
+			s.lastLoFeature = s.minASB
+			s.lastHiFeature = s.maxASB
+			s.lastLoK = s.LoK
+			s.lastHiK = s.HiK
+		}
+	}
+}
+
+func (s *soundSpotter) zeroBuf(buf ss_sample, length uint64) {
+	i := 0
+	for ; length > 0; length-- {
+		buf[i] = 0.0
+		i++
 	}
 }

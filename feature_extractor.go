@@ -17,17 +17,17 @@ type featureExtractor struct {
 	fftIn            *fftw.Array // storage for FFT input
 	fftComplex       *fftw.Array // storage for FFT output
 	fftPowerSpectrum []float64   // storage for FFT power spectrum
-	fftN             int       // linear frequency resolution (FFT) (user)
-	fftOutN          int       // linear frequency power spectrum values (automatic)
-	bpoN             int       // constant-Q bands per octave (user)
-	cqtN             int       // number of constant-Q coefficients (automatic)
-	dctN             int       // number of discrete cosine transform coefficients (automatic)
-	CQT              []float64 // constant-Q transform coefficients
-	cqStart          []int     // sparse constant-Q matrix coding indices
-	cqStop           []int     // sparse constant-Q matrix coding indices
-	DCT              []float64 // discrete cosine transform coefficients
-	cqtOut           []float64 // constant-Q coefficient output storage
-	dctOut           ss_sample // mfcc coefficients (feature output) storage
+	fftN             int         // linear frequency resolution (FFT) (user)
+	fftOutN          int         // linear frequency power spectrum values (automatic)
+	bpoN             int         // constant-Q bands per octave (user)
+	cqtN             int         // number of constant-Q coefficients (automatic)
+	dctN             int         // number of discrete cosine transform coefficients (automatic)
+	CQT              []float64   // constant-Q transform coefficients
+	cqStart          []int       // sparse constant-Q matrix coding indices
+	cqStop           []int       // sparse constant-Q matrix coding indices
+	DCT              []float64   // discrete cosine transform coefficients
+	cqtOut           []float64   // constant-Q coefficient output storage
+	dctOut           ss_sample   // mfcc coefficients (feature output) storage
 	logFreqMap       []float64
 	loEdge           float64
 	hiEdge           float64
@@ -266,4 +266,40 @@ func (e featureExtractor) extractSeriesOfVectors(databuf ss_sample, numChannels 
 		XPtr++
 	}
 	return XPtr
+}
+
+// extract feature vectors from MONO input buffer
+func (e featureExtractor) extractVector(n int, in1, in2, outs1 ss_sample, power *float64, doMFCC int) {
+	w := 0
+	o := 0
+	in := 0 // the MONO input buffer
+	var val, sum float64
+	oneOverWindowLength := 1.0 / float64(e.WindowLength)
+	// window input samples
+	for ; n > 0; n-- {
+		val = in2[in]
+		in++
+		sum += val * val
+		c := complex(val*e.hammingWin[w]*e.winNorm, 0)
+		e.fftIn.Set(o, c)
+		o++
+		w++
+	}
+	*power = sum * oneOverWindowLength // power calculation in Bels
+	// zero pad the rest of the FFT window
+	n = e.fftN - e.WindowLength
+	for ; n > 0; n-- {
+		e.fftIn.Set(o, 0)
+	} // <====== FIX ME: This is redundant (in theory, but pointers might get re-used in SP chain)
+	// extract MFCC and place result in outs1
+	if doMFCC == 1 {
+		e.computeMFCC(outs1)
+	} else {
+		n = e.dctN
+		i := 0
+		for ; n > 0; n-- {
+			outs1[i] = in2[i]
+			i++
+		}
+	}
 }

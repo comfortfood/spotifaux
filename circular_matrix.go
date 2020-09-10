@@ -11,6 +11,10 @@ type seriesOfVectors struct {
 	N      idxT      // Length of vector series
 }
 
+func NewSeriesOfVectors(M idxT, N idxT) *seriesOfVectors {
+	return &seriesOfVectors{series: make(ss_sample, M*N), M: M, N: N}
+}
+
 // Column 0 Accessor
 func (s *seriesOfVectors) getSeries() ss_sample { return s.series }
 
@@ -42,14 +46,7 @@ func (s *seriesOfVectors) copy(source *seriesOfVectors) int {
 		// NEED AN ERROR MESSAGE
 		return 0
 	}
-	dp := 0
-	sp := 0
-	n := s.getRows() * s.getCols()
-	for ; n > 0; n-- {
-		s.series[dp] = source.getSeries()[sp]
-		dp++
-		sp++
-	}
+	copy(s.series, source.getSeries())
 	return 1
 }
 

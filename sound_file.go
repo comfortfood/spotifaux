@@ -51,8 +51,8 @@ func (f *soundFile) sfOpen(inFileName string) int64 {
 
 // Read the entire soundfile into a new float buffer
 func (f *soundFile) loadSound() int64 {
-	soundBuf := make([]float32, f.numFrames*int64(f.info.Channels))
-	numRead, err := f.inFile.ReadFrames(soundBuf)
+	f.soundBuf = make(ss_sample, f.numFrames*int64(f.info.Channels))
+	numRead, err := f.inFile.ReadFrames(f.soundBuf)
 	if err != nil {
 		panic(err)
 	}

@@ -37,7 +37,7 @@ type featureExtractor struct {
 	WindowLength     int
 }
 
-func (e featureExtractor) initializeFeatureExtractor() {
+func (e *featureExtractor) initializeFeatureExtractor() {
 	e.fftOutN = e.fftN/2 + 1
 	e.bpoN = 12
 	e.cqtN = 0
@@ -64,32 +64,32 @@ func (e featureExtractor) initializeFeatureExtractor() {
 	e.initializeFFTWplan() // cannot write from VST plugins ?
 }
 
-func (e featureExtractor) initializeFFTWplan() {
+func (e *featureExtractor) initializeFFTWplan() {
 	e.fftwPlan = fftw.NewPlan(e.fftIn, e.fftComplex, fftw.Forward, fftw.Estimate)
 }
 
 // FFT Hamming window
-func (e featureExtractor) makeHammingWin() {
+func (e *featureExtractor) makeHammingWin() {
 	TWO_PI := 2 * math.Pi
 	oneOverWinLenm1 := 1.0 / (e.WindowLength - 1)
 	if e.hammingWin != nil {
 		e.hammingWin = nil
 	}
-	hammingWin := make(ss_sample, e.WindowLength)
+	e.hammingWin = make(ss_sample, e.WindowLength)
 	for k := 0; k < e.WindowLength; k++ {
-		hammingWin[k] = 0.54 - 0.46*math.Cos(TWO_PI*float64(k*oneOverWinLenm1))
+		e.hammingWin[k] = 0.54 - 0.46*math.Cos(TWO_PI*float64(k*oneOverWinLenm1))
 	}
 	sum := 0.0
 	n := e.WindowLength
 	w := 0
 	for ; n > 0; n-- {
-		sum += hammingWin[w] * hammingWin[w] // Make a global value, compute only once
+		sum += e.hammingWin[w] * e.hammingWin[w] // Make a global value, compute only once
 		w++
 	}
 	e.winNorm = 1.0 / (math.Sqrt(sum * float64(e.WindowLength)))
 }
 
-func (e featureExtractor) makeLogFreqMap() {
+func (e *featureExtractor) makeLogFreqMap() {
 	var i, j int
 	if e.loEdge == 0.0 {
 		e.loEdge = 55.0 * math.Pow(2.0, 2.5/12.0) // low C minus quarter tone
@@ -155,7 +155,7 @@ func (e featureExtractor) makeLogFreqMap() {
 }
 
 // discrete cosine transform
-func (e featureExtractor) makeDCT() {
+func (e *featureExtractor) makeDCT() {
 	var i, j int
 	nm := 1 / math.Sqrt(float64(e.cqtN)/2.0)
 	e.dctN = e.cqtN // Full spectrum DCT matrix
@@ -171,7 +171,7 @@ func (e featureExtractor) makeDCT() {
 	}
 }
 
-func (e featureExtractor) computeMFCC(outs1 ss_sample) {
+func (e *featureExtractor) computeMFCC(outs1 ss_sample) {
 	var x, y float64
 
 	e.fftwPlan.Execute()
@@ -229,7 +229,7 @@ func (e featureExtractor) computeMFCC(outs1 ss_sample) {
 }
 
 // extract feature vectors from multichannel audio float buffer (allocate new vector memory)
-func (e featureExtractor) extractSeriesOfVectors(databuf ss_sample, numChannels int, buflen int64, vecs, powers ss_sample, dim idxT, numvecs int) int {
+func (e *featureExtractor) extractSeriesOfVectors(databuf ss_sample, numChannels int, buflen int64, vecs, powers ss_sample, dim idxT, numvecs int) int {
 	var ptr1, ptr2 int                          // moving pointer to hamming window
 	oneOverWindowLength := 1.0 / e.WindowLength // power normalization
 	var xPtr, XPtr int
@@ -269,7 +269,7 @@ func (e featureExtractor) extractSeriesOfVectors(databuf ss_sample, numChannels 
 }
 
 // extract feature vectors from MONO input buffer
-func (e featureExtractor) extractVector(n int, in1, in2, outs1 ss_sample, power *float64, doMFCC int) {
+func (e *featureExtractor) extractVector(n int, in1, in2, outs1 ss_sample, power *float64, doMFCC int) {
 	w := 0
 	o := 0
 	in := 0 // the MONO input buffer

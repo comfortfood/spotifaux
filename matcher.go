@@ -100,7 +100,7 @@ func (m *matcher) match(matchRadius float64, shingleSize, dbSize, loDataLoc, hiD
 	// FIX ME: the frame queue hash table logic is a bit off when queue sizes (or window sizes) change
 	if winner > -1 {
 		m.pushFrameQueue(int(float64(winner)*oneOverW), queueSize) // Hash down frame to hop boundary and queue
-	} else if m.frameQueue.Len() == 0 {
+	} else if m.frameQueue.Len() > 0 {
 		e := m.frameQueue.Front()
 		m.frameHashTable[e.Value.(int)] = 0
 		m.frameQueue.Remove(e)

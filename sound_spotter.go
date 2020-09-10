@@ -71,9 +71,9 @@ type soundSpotter struct {
 	matcher          *matcher // shingle matching algorithm
 	featureExtractor *featureExtractor
 
-	pwr_abs_thresh float64   // don't match below this threshold
-	pwr_rel_thresh ss_sample // don't match below this threshold
-	Radius         float64   // Search Radius
+	pwr_abs_thresh float64 // don't match below this threshold
+	pwr_rel_thresh float64 // don't match below this threshold
+	Radius         float64 // Search Radius
 
 	LoK      int // Database start point marker
 	HiK      int // Database end point marker
@@ -92,20 +92,44 @@ type soundSpotter struct {
 // multi-channel soundspotter
 // expects MONO input and possibly multi-channel DATABASE audio output
 func newSoundSpotter(sampleRate int, WindowLength int, numChannels int) *soundSpotter {
-	ss := &soundSpotter{}
+
+	ss := &soundSpotter{
+		sampleRate:         sampleRate,
+		WindowLength:       WindowLength,
+		numChannels:        numChannels,
+		lastLoFeature:      -1,
+		lastHiFeature:      -1,
+		ifaceLoFeature:     3,
+		ifaceHiFeature:     20,
+		isMaster:           1,
+		lastShingleSize:    -1,
+		ifaceShingleSize:   4,
+		shingleHop:         1,
+		lastWinner:         -1,
+		winner:             -1,
+		pwr_abs_thresh:     0.000001,
+		pwr_rel_thresh:     0.1,
+		Radius:             0.0,
+		LoK:                -1,
+		HiK:                -1,
+		lastLoK:            -1,
+		lastHiK:            -1,
+		betaParameter:      1.0,
+		soundSpotterStatus: STOP,
+	}
 
 	DEBUGINFO("feature extractor...")
 	ss.featureExtractor = &featureExtractor{sampleRate: sampleRate, WindowLength: WindowLength, fftN: SS_FFT_LENGTH}
 	ss.featureExtractor.initializeFeatureExtractor()
-	NASB := ss.featureExtractor.dctN
+	ss.NASB = ss.featureExtractor.dctN
 	DEBUGINFO("maxF...")
 	ss.maxF = (int)((float32(sampleRate) / float32(WindowLength)) * SS_MAX_DATABASE_SECS)
 	DEBUGINFO("makeHammingWin2...")
 	ss.makeHammingWin2()
 	fmt.Printf("inShingle...")
 	MAX_SHINGLE_SIZE := SS_MAX_SHINGLE_SZ
-	ss.inShingle = &seriesOfVectors{M: idxT(NASB), N: idxT(MAX_SHINGLE_SIZE)}
-	ss.inPowers = &seriesOfVectors{M: idxT(MAX_SHINGLE_SIZE), N: idxT(1)}
+	ss.inShingle = NewSeriesOfVectors(idxT(ss.NASB), idxT(MAX_SHINGLE_SIZE))
+	ss.inPowers = NewSeriesOfVectors(idxT(MAX_SHINGLE_SIZE), idxT(1))
 
 	DEBUGINFO("audioOutputBuffer...")
 	ss.audioOutputBuffer = make(ss_sample, WindowLength*MAX_SHINGLE_SIZE*numChannels) // fix size at constructor ?
@@ -286,8 +310,10 @@ func (s *soundSpotter) run(n int, ins1, ins2, outs1, outs2 ss_sample) {
 
 	switch s.soundSpotterStatus {
 	case STOP:
+		i := 0
 		for ; n > 0; n-- {
-			outs2[n] = 0
+			outs2[i] = 0
+			i++
 		}
 		return
 
@@ -403,6 +429,10 @@ func (s *soundSpotter) updateAudioOutputBuffers(outSamps ss_sample) {
 	}
 }
 
+func (s *soundSpotter) reportResult() int {
+	return s.winner
+}
+
 // sampleBuf() copy n*shingleHop to audioOutputBuffer from best matching segment in source buffer x[]
 func (s *soundSpotter) sampleBuf() {
 	p := 0 // MULTI-CHANNEL OUTPUT
@@ -455,9 +485,9 @@ func (s *soundSpotter) resetShingles(newSize int) int {
 
 	if s.sourceShingles == nil {
 		DEBUGINFO("allocate new sourceShingles...")
-		s.sourceShingles = &seriesOfVectors{M: idxT(s.NASB), N: idxT(newSize)}
-		s.sourcePowers = &seriesOfVectors{M: idxT(newSize), N: idxT(1)}
-		s.sourcePowersCurrent = &seriesOfVectors{M: idxT(newSize), N: idxT(1)}
+		s.sourceShingles = NewSeriesOfVectors(idxT(s.NASB), idxT(newSize))
+		s.sourcePowers = NewSeriesOfVectors(idxT(newSize), idxT(1))
+		s.sourcePowersCurrent = NewSeriesOfVectors(idxT(newSize), idxT(1))
 		DEBUGINFO("allocate matcher...")
 		MAX_SHINGLE_SIZE := SS_MAX_SHINGLE_SZ
 		s.matcher = &matcher{
@@ -465,6 +495,7 @@ func (s *soundSpotter) resetShingles(newSize int) int {
 			maxDBSize:      newSize,
 			frameHashTable: make([]int, newSize),
 		}
+		s.matcher.resize(s.matcher.maxShingleSize, s.matcher.maxDBSize)
 	}
 
 	s.resetBufPtrs() // fill shingles with zeros and set buffer pointers to zero

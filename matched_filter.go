@@ -14,6 +14,47 @@ type matchedFilter struct {
 	maxDBSize      int // largest database to allocate
 }
 
+func (f *matchedFilter) resize(maxShingleSize, maxDBSize int) {
+	if f.maxShingleSize != 0 {
+		f.clearMemory()
+	}
+
+	f.maxShingleSize = maxShingleSize
+	f.maxDBSize = maxDBSize
+
+	var j int
+
+	// Cross-correlation matrix
+	f.D = make([][]float64, maxShingleSize)
+	for j = 0; j < maxShingleSize; j++ {
+		f.D[j] = make([]float64, maxDBSize)
+	}
+
+	// Matched filter matrix
+	f.DD = make([]float64, maxDBSize)
+
+	// Allocate for L2 norm vectors
+	f.qNorm = make([]float64, maxShingleSize) // query is one shingle of length W
+	f.sNorm = make([]float64, maxDBSize)      // source shingles of length W
+}
+func (f *matchedFilter) clearMemory() {
+	if f.D != nil {
+		f.D = nil
+	}
+
+	if f.DD != nil {
+		f.DD = nil
+	}
+
+	if f.qNorm != nil {
+		f.qNorm = nil
+	}
+
+	if f.sNorm != nil {
+		f.sNorm = nil
+	}
+}
+
 func (f *matchedFilter) getQNorm(i int) float64 {
 	if i < f.maxShingleSize {
 		return f.qNorm[i]

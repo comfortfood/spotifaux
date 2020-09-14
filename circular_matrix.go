@@ -19,20 +19,12 @@ func NewSeriesOfVectors(rows idxT, columns idxT) *seriesOfVectors {
 
 func (s *seriesOfVectors) getCol(column idxT) ss_sample { return s.series[column*s.rows:] }
 
-func (s *seriesOfVectors) insert(v ss_sample, column idxT) {
-	qp := column * s.rows
-	fp := 0
-	row := s.rows
-	for ; row > 0; row-- {
-		s.series[qp] = v[fp] // copy feature extract output to inShingle current pos (muxi)
-		qp++
-		fp++
-	}
+func (s *seriesOfVectors) insert(outputFeatures ss_sample, column idxT) {
+	copy(s.series[column*s.rows:], outputFeatures[:s.rows])
 }
 
 func (s *seriesOfVectors) copy(source *seriesOfVectors) int {
-	if !(s.columns == source.columns && s.rows == source.rows) {
-		// NEED AN ERROR MESSAGE
+	if s.columns != source.columns || s.rows != source.rows {
 		return 0
 	}
 	copy(s.series, source.series)
@@ -41,12 +33,9 @@ func (s *seriesOfVectors) copy(source *seriesOfVectors) int {
 
 func vectorSumSquares(vec ss_sample, len int) float64 {
 	sum1 := 0.0
-	var v1 float64
-	i := 0
-	for ; len > 0; len-- {
-		v1 = vec[i]
+	for i := 0; i < len; i++ {
+		v1 := vec[i]
 		sum1 += v1 * v1
-		i++
 	}
 	return sum1
 }
@@ -73,24 +62,18 @@ func seriesMean(v []float64, seqlen, sz idxT) {
 }
 
 func seriesSum(v []float64, seqlen, sz idxT) {
-	tmp1 := 0.0
-	tmp2 := 0.0
-	sp := 0
-	spd := 1
-	l := seqlen - 1
-	tmp1 = v[sp]
-	// Initialize with first value
-	for ; l > 0; l-- {
-		v[sp] += v[spd]
-		spd++
+
+	movingSum := 0.0
+	for spd := 0; idxT(spd) < seqlen; spd++ {
+		movingSum += v[spd]
 	}
-	// Now walk the array subtracting first and adding last
-	l = sz - seqlen // +1 -1
-	sp = 1
-	for ; l > 0; l-- {
-		tmp2 = v[sp]
-		v[sp] = v[sp-1] - tmp1 + v[idxT(sp)+seqlen-1]
-		tmp1 = tmp2
-		sp++
+
+	for sp := 0; sp <= int(sz-seqlen); sp++ {
+		first := v[sp]
+		last := v[idxT(sp)+seqlen]
+
+		v[sp] = movingSum
+
+		movingSum = movingSum - first + last
 	}
 }

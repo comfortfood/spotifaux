@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/mkb218/gosndfile/sndfile"
 )
 
@@ -37,10 +36,8 @@ func (f *soundFile) sfOpen(inFileName string) int64 {
 	f.inFile = inFile
 
 	if !sndfile.FormatCheck(*f.info) {
-		fmt.Printf("SoundFile format not supported: %0X\n", f.info.Format)
 		return -1
 	}
-	fmt.Printf("sfinfo.format = %0X, %d\n", f.info.Format, f.info.Channels)
 	f.numFrames = f.info.Frames
 	if f.numFrames > SF_MAX_NUM_FRAMES {
 		f.numFrames = SF_MAX_NUM_FRAMES
@@ -57,16 +54,4 @@ func (f *soundFile) loadSound() int64 {
 		panic(err)
 	}
 	return numRead
-}
-
-func (f *soundFile) getSoundBuf() ss_sample {
-	return f.soundBuf
-}
-
-func (f *soundFile) getNumChannels() int {
-	return int(f.info.Channels)
-}
-
-func (f *soundFile) getBufLen() int64 {
-	return f.numFrames // this should be ulong
 }

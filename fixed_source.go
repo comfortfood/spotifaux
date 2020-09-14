@@ -11,13 +11,13 @@ type source interface {
 	Close() error
 }
 
-type inputSource struct {
+type fixedSource struct {
 	f       *os.File
 	scanner *bufio.Scanner
 }
 
-func newInputSource() inputSource {
-	r := inputSource{}
+func newFixedSource() fixedSource {
+	r := fixedSource{}
 
 	f, err := os.Open("/Users/wyatttall/git/BLAST/soundspotter/out")
 	if err != nil {
@@ -31,7 +31,7 @@ func newInputSource() inputSource {
 	return r
 }
 
-func (s *inputSource) Float64() float64 {
+func (s *fixedSource) Float64() float64 {
 	s.scanner.Scan()
 	v, err := strconv.ParseFloat(s.scanner.Text(), 64)
 	if err != nil {
@@ -41,6 +41,6 @@ func (s *inputSource) Float64() float64 {
 	return v
 }
 
-func (s *inputSource) Close() error {
+func (s *fixedSource) Close() error {
 	return s.f.Close()
 }

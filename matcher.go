@@ -16,16 +16,11 @@ type matcher struct {
 
 // Push a frame onto the frameQueue
 // and pop the last frame from the queue
-func (m *matcher) pushFrameQueue(slot, queueSize int) {
-	for m.frameQueue.Len() > 0 && m.frameQueue.Len() >= queueSize {
+func (m *matcher) pushFrameQueue() {
+	for m.frameQueue.Len() > 0 {
 		e := m.frameQueue.Front()
 		m.frameHashTable[e.Value.(int)] = 0
 		m.frameQueue.Remove(e)
-	}
-
-	if queueSize != 0 {
-		m.frameHashTable[slot] = 1
-		m.frameQueue.PushBack(slot)
 	}
 }
 
@@ -50,13 +45,12 @@ func (m *matcher) clearFrameQueue() {
 // Substantially Modified: Michael A. Casey, August 24th - 27th 2007
 // Factored out dependency on SoundSpotter class, August 8th - 9th 2009
 // Added power features for threshold tests
-func (m *matcher) match(matchRadius float64, shingleSize, dbSize, loDataLoc, hiDataLoc,
-	queueSize int, inPwMn float64, powers ss_sample, pwr_abs_thresh float64) int {
+func (m *matcher) match(shingleSize, dbSize, loDataLoc, hiDataLoc int,
+	inPwMn float64, powers ss_sample, pwr_abs_thresh float64) int {
 	pwr_rel_thresh := 0.1
 	dist := 0.0
 	minD := 1e6
 	dRadius := 0.0
-	iRadius := matchRadius * matchRadius // squared search radius
 	minDist := 10.0
 	winner := -1
 	// Perform the recursive Matched Filtering (core match algorithm)
@@ -72,8 +66,8 @@ func (m *matcher) match(matchRadius float64, shingleSize, dbSize, loDataLoc, hiD
 			if !math.IsNaN(pk) && !(sk == NEGINF) && pk > pwr_abs_thresh &&
 				(!m.useRelativeThreshold || inPwMn/pk < pwr_rel_thresh) {
 				// The norm matched filter distance  is the Euclidean distance between the vectors
-				dist = 2 - 2/(qN0*sk)*m.getDD(k)   // squared Euclidean distance
-				dRadius = math.Abs(dist - iRadius) // Distance from search radius
+				dist = 2 - 2/(qN0*sk)*m.getDD(k) // squared Euclidean distance
+				dRadius = math.Abs(dist)         // Distance from search radius
 				// Perform min-dist search
 				if dRadius < minD { // prefer matches at front
 					minD = dRadius
@@ -83,23 +77,18 @@ func (m *matcher) match(matchRadius float64, shingleSize, dbSize, loDataLoc, hiD
 			}
 		}
 	}
-	if m.frameQueue.Len() > queueSize {
-		// New size is smaller
-		// Reset frames beyond queueSize
-		sz := m.frameQueue.Len()
-		qs := queueSize
-		e := m.frameQueue.Back()
-		for k := 0; k < sz-qs; k++ {
-			kVal := e.Value.(int)
-			e = e.Prev()
-			m.frameHashTable[kVal] = 0
-		}
-	} else if m.frameQueue.Len() < queueSize {
-		// New size is larger, set remainder to 0
+	// New size is smaller
+	// Reset frames beyond queueSize
+	sz := m.frameQueue.Len()
+	e := m.frameQueue.Back()
+	for k := 0; k < sz; k++ {
+		kVal := e.Value.(int)
+		e = e.Prev()
+		m.frameHashTable[kVal] = 0
 	}
 	// FIX ME: the frame queue hash table logic is a bit off when queue sizes (or window sizes) change
 	if winner > -1 {
-		m.pushFrameQueue(int(float64(winner)*oneOverW), queueSize) // Hash down frame to hop boundary and queue
+		m.pushFrameQueue() // Hash down frame to hop boundary and queue
 	} else if m.frameQueue.Len() > 0 {
 		e := m.frameQueue.Front()
 		m.frameHashTable[e.Value.(int)] = 0

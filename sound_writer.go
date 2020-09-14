@@ -1,17 +1,19 @@
 package main
 
-import "github.com/mkb218/gosndfile/sndfile"
+import (
+	"github.com/mkb218/gosndfile/sndfile"
+)
 
 type wavWriter struct {
 	f *sndfile.File
 }
 
-func NewWavWriter(name string) *wavWriter {
+func NewWavWriter(filename string) *wavWriter {
 	var i sndfile.Info
 	i.Format = sndfile.SF_FORMAT_WAV | sndfile.SF_FORMAT_PCM_16
 	i.Channels = 1
 	i.Samplerate = 44100
-	f, err := sndfile.Open(name, sndfile.Write, &i)
+	f, err := sndfile.Open(filename, sndfile.Write, &i)
 	if err != nil {
 		panic(err)
 	}

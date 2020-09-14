@@ -1,16 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"github.com/runningwild/go-fftw/fftw"
 	"math"
 )
 
 const CQ_ENV_THRESH = 0.001
-
-func DEBUGINFO(s string) {
-	fmt.Printf(s)
-}
 
 type featureExtractor struct {
 	fftwPlan         *fftw.Plan
@@ -21,7 +16,6 @@ type featureExtractor struct {
 	fftOutN          int         // linear frequency power spectrum values (automatic)
 	bpoN             int         // constant-Q bands per octave (user)
 	cqtN             int         // number of constant-Q coefficients (automatic)
-	dctN             int         // number of discrete cosine transform coefficients (automatic)
 	CQT              []float64   // constant-Q transform coefficients
 	cqStart          []int       // sparse constant-Q matrix coding indices
 	cqStop           []int       // sparse constant-Q matrix coding indices
@@ -41,26 +35,20 @@ func (e *featureExtractor) initializeFeatureExtractor() {
 	e.fftOutN = e.fftN/2 + 1
 	e.bpoN = 12
 	e.cqtN = 0
-	e.dctN = 0
 
 	// Construct transform coefficients
-	DEBUGINFO("makeHammingWin...")
 	e.makeHammingWin()
-	DEBUGINFO("makeLogFreqMap...")
 	e.makeLogFreqMap()
-	DEBUGINFO("DCT...")
 	e.makeDCT()
 
 	// FFTW memory allocation
-	DEBUGINFO("FFTW...")
 	e.fftIn = fftw.NewArray(e.fftN)
 	e.fftComplex = fftw.NewArray(e.fftOutN)
 	e.fftPowerSpectrum = make([]float64, e.fftOutN)
 	e.cqtOut = make([]float64, e.cqtN)
-	e.dctOut = make(ss_sample, e.dctN)
+	e.dctOut = make(ss_sample, e.cqtN)
 
 	// FFTW plan caching
-	DEBUGINFO("FFTWplan...")
 	e.initializeFFTWplan() // cannot write from VST plugins ?
 }
 
@@ -99,9 +87,6 @@ func (e *featureExtractor) makeLogFreqMap() {
 	}
 	fratio := math.Pow(2.0, 1.0/float64(e.bpoN)) // Constant-Q bandwidth
 	e.cqtN = int(math.Floor(math.Log(e.hiEdge/e.loEdge) / math.Log(fratio)))
-	if e.cqtN < 1 {
-		fmt.Printf("warning: cqtN not positive definite\n")
-	}
 	fftfrqs := make([]float64, e.fftOutN)     // Actual number of real FFT coefficients
 	logfrqs := make([]float64, e.cqtN)        // Number of constant-Q spectral bins
 	logfbws := make([]float64, e.cqtN)        // Bandwidths of constant-Q bins
@@ -158,10 +143,10 @@ func (e *featureExtractor) makeLogFreqMap() {
 func (e *featureExtractor) makeDCT() {
 	var i, j int
 	nm := 1 / math.Sqrt(float64(e.cqtN)/2.0)
-	e.dctN = e.cqtN // Full spectrum DCT matrix
-	e.DCT = make([]float64, e.cqtN*e.dctN)
+	// Full spectrum DCT matrix
+	e.DCT = make([]float64, e.cqtN*e.cqtN)
 
-	for i = 0; i < e.dctN; i++ {
+	for i = 0; i < e.cqtN; i++ {
 		for j = 0; j < e.cqtN; j++ {
 			e.DCT[i*e.cqtN+j] = nm * math.Cos(float64(i*(2*j+1))*math.Pi/float64(2)/float64(e.cqtN))
 		}
@@ -213,7 +198,7 @@ func (e *featureExtractor) computeMFCC(outs1 ss_sample) {
 		e.cqtOut[ptr1] = math.Log10(e.cqtOut[ptr1])
 		ptr1++
 	}
-	a = e.dctN
+	a = e.cqtN
 	ptr2 = 0 // point to column of DCT
 	mfccPtr = 0
 	for ; a > 0; a-- {
@@ -230,47 +215,47 @@ func (e *featureExtractor) computeMFCC(outs1 ss_sample) {
 }
 
 // extract feature vectors from multichannel audio float buffer (allocate new vector memory)
-func (e *featureExtractor) extractSeriesOfVectors(databuf ss_sample, numChannels int, buflen int64, vecs, powers ss_sample, dim idxT, numvecs int) int {
+func (e *featureExtractor) extractSeriesOfVectors(s *soundSpotter) int {
 	var ptr1, ptr2 int                                   // moving pointer to hamming window
 	oneOverWindowLength := 1.0 / float64(e.WindowLength) // power normalization
 	var xPtr, XPtr int
-	for int64(xPtr) < buflen-int64(e.WindowLength)*int64(numChannels) && XPtr < numvecs {
+	for int64(xPtr) < s.bufLen-int64(e.WindowLength)*int64(s.numChannels) && XPtr < s.getLengthSourceShingles() {
 		o := 0
 		in := xPtr
 		w := 0
 		n2 := e.WindowLength
 		var val, sum float64
 		for ; n2 > 0; n2-- {
-			val = databuf[in]
+			val = s.audioDatabaseBuf[in]
 			e.fftIn.Set(o, complex(val*e.hammingWin[w]*e.winNorm, 0))
 			o++
 			w++
 			sum += val * val
-			in += numChannels // extract from left channel only
+			in += s.numChannels // extract from left channel only
 		}
-		powers[XPtr] = sum * float64(oneOverWindowLength) // database powers calculation in Bels
-		n2 = e.fftN - e.WindowLength                      // Zero pad the rest of the FFT window
+		s.sourcePowers.series[XPtr] = sum * float64(oneOverWindowLength) // database powers calculation in Bels
+		n2 = e.fftN - e.WindowLength                                     // Zero pad the rest of the FFT window
 		for ; n2 > 0; n2-- {
 			e.fftIn.Set(o, 0)
 			o++
 		}
 		e.computeMFCC(e.dctOut)
-		ptr1 = XPtr * e.dctN
+		ptr1 = XPtr * e.cqtN
 		ptr2 = 0
-		n2 = e.dctN
+		n2 = e.cqtN
 		for ; n2 > 0; n2-- { // Copy to series of vectors
-			vecs[ptr1] = e.dctOut[ptr2]
+			s.sourceShingles.series[ptr1] = e.dctOut[ptr2]
 			ptr1++
 			ptr2++
 		}
-		xPtr += e.WindowLength * numChannels
+		xPtr += e.WindowLength * s.numChannels
 		XPtr++
 	}
 	return XPtr
 }
 
 // extract feature vectors from MONO input buffer
-func (e *featureExtractor) extractVector(n int, in1, in2, outs1 ss_sample, power *float64, doMFCC int) {
+func (e *featureExtractor) extractVectorFromMono(n int, inputSamps, outputFeatures ss_sample, power *float64) {
 	w := 0
 	o := 0
 	in := 0 // the MONO input buffer
@@ -278,7 +263,7 @@ func (e *featureExtractor) extractVector(n int, in1, in2, outs1 ss_sample, power
 	oneOverWindowLength := 1.0 / float64(e.WindowLength)
 	// window input samples
 	for ; n > 0; n-- {
-		val = in2[in]
+		val = inputSamps[in]
 		in++
 		sum += val * val
 		c := complex(val*e.hammingWin[w]*e.winNorm, 0)
@@ -292,15 +277,6 @@ func (e *featureExtractor) extractVector(n int, in1, in2, outs1 ss_sample, power
 	for ; n > 0; n-- {
 		e.fftIn.Set(o, 0)
 	} // <====== FIX ME: This is redundant (in theory, but pointers might get re-used in SP chain)
-	// extract MFCC and place result in outs1
-	if doMFCC == 1 {
-		e.computeMFCC(outs1)
-	} else {
-		n = e.dctN
-		i := 0
-		for ; n > 0; n-- {
-			outs1[i] = in2[i]
-			i++
-		}
-	}
+	// extract MFCC and place result in outputFeatures
+	e.computeMFCC(outputFeatures)
 }

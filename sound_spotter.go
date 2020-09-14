@@ -24,11 +24,9 @@ type soundSpotter struct {
 
 	loFeature        int
 	hiFeature        int
-	lastLoFeature    int  // persist feature parameters for database norming
-	lastHiFeature    int  // persist feature parameters for database norming
-	normsNeedUpdate  bool // flag to indicate that database norms are dirty
-	audioDisabled    int  // whether to process audio
-	basisWidth       int
+	lastLoFeature    int       // persist feature parameters for database norming
+	lastHiFeature    int       // persist feature parameters for database norming
+	normsNeedUpdate  bool      // flag to indicate that database norms are dirty
 	audioDatabaseBuf ss_sample // SoundSpotter pointer to PD internal buf
 	bufLen           int64
 
@@ -59,7 +57,7 @@ type soundSpotter struct {
 
 // multi-channel soundspotter
 // expects MONO input and possibly multi-channel DATABASE audio output
-func newSoundSpotter(sampleRate int, WindowLength int, numChannels int) *soundSpotter {
+func newSoundSpotter(sampleRate, WindowLength, numChannels int, soundBuf ss_sample, numFrames int64, channels int) *soundSpotter {
 
 	s := &soundSpotter{
 		sampleRate:      sampleRate,
@@ -86,29 +84,21 @@ func newSoundSpotter(sampleRate int, WindowLength int, numChannels int) *soundSp
 	s.featureExtractor.initializeFeatureExtractor()
 	s.maxF = (int)((float32(sampleRate) / float32(WindowLength)) * SS_MAX_DATABASE_SECS)
 	s.makeHammingWin2()
-	s.MAX_SHINGLE_SIZE = SS_MAX_SHINGLE_SZ
-	s.inShingle = NewSeriesOfVectors(idxT(s.featureExtractor.cqtN), idxT(s.MAX_SHINGLE_SIZE))
-	s.inPowers = make(ss_sample, s.MAX_SHINGLE_SIZE)
+	s.inShingle = NewSeriesOfVectors(idxT(s.featureExtractor.cqtN), idxT(SS_MAX_SHINGLE_SZ))
+	s.inPowers = make(ss_sample, SS_MAX_SHINGLE_SZ)
 
-	s.audioOutputBuffer = make(ss_sample, WindowLength*s.MAX_SHINGLE_SIZE*numChannels) // fix size at constructor ?
-	s.resetShingles(s.maxF)                                                            // Some default number of shingles
-	return s
-}
+	s.audioOutputBuffer = make(ss_sample, WindowLength*SS_MAX_SHINGLE_SZ*numChannels) // fix size at constructor ?
 
-func (s *soundSpotter) getLengthSourceShingles() int {
-	return int(math.Ceil(float64(s.bufLen) / (float64(s.numChannels) * float64(s.WindowLength))))
-}
-func (s *soundSpotter) setAudioDatabaseBuf(b ss_sample, l int64, channels int) {
-	s.numChannels = channels
-	s.audioDatabaseBuf = b
-	l = l * int64(channels)
-	if l > int64(s.maxF)*int64(s.WindowLength)*int64(channels) {
-		l = int64(s.maxF) * int64(s.WindowLength) * int64(channels)
+	s.dbShingles = NewSeriesOfVectors(idxT(s.featureExtractor.cqtN), idxT(s.maxF))
+	s.dbPowers = make(ss_sample, s.maxF)
+	s.dbPowersCurrent = make(ss_sample, s.maxF)
+	s.matcher = &matcher{
+		maxShingleSize: SS_MAX_SHINGLE_SZ,
+		maxDBSize:      s.maxF,
+		frameHashTable: make([]int, s.maxF),
 	}
-	s.bufLen = l
-}
+	s.matcher.resize(s.matcher.maxShingleSize, s.matcher.maxDBSize)
 
-func (s *soundSpotter) resetBufPtrs() {
 	s.dbSize = 0
 	if s.inShingle != nil && s.dbShingles != nil {
 		s.zeroBuf(s.dbShingles.series)
@@ -117,6 +107,28 @@ func (s *soundSpotter) resetBufPtrs() {
 		s.zeroBuf(s.dbPowers)
 	}
 	s.zeroBuf(s.audioOutputBuffer)
+
+	s.numChannels = channels
+	s.audioDatabaseBuf = soundBuf
+	s.bufLen = numFrames * int64(channels)
+	if numFrames > int64(s.maxF)*int64(s.WindowLength)*int64(channels) {
+		s.bufLen = int64(s.maxF) * int64(s.WindowLength) * int64(channels)
+	}
+	s.muxi = 0        // multiplexer index
+	s.lastAlpha = 0.0 // crossfade coefficient
+	s.winner = -1
+	s.lastWinner = -1
+	s.LoK = 0
+	s.HiK = 0
+	s.lastShingleSize = -1
+	s.matcher.clearFrameQueue()
+	s.normsNeedUpdate = true
+
+	return s
+}
+
+func (s *soundSpotter) getLengthSourceShingles() int {
+	return int(math.Ceil(float64(s.bufLen) / (float64(s.numChannels) * float64(s.WindowLength))))
 }
 
 // This half hamming window is used for cross fading output buffers
@@ -208,43 +220,6 @@ func (s *soundSpotter) match() {
 			s.lastAlpha = alpha
 		}
 	}
-}
-
-func (s *soundSpotter) resetShingles(newSize int) int {
-	if newSize > s.maxF {
-		newSize = s.maxF
-	}
-
-	if s.dbShingles == nil {
-		s.dbShingles = NewSeriesOfVectors(idxT(s.featureExtractor.cqtN), idxT(newSize))
-		s.dbPowers = make(ss_sample, newSize)
-		s.dbPowersCurrent = make(ss_sample, newSize)
-		s.MAX_SHINGLE_SIZE = SS_MAX_SHINGLE_SZ
-		s.matcher = &matcher{
-			maxShingleSize: s.MAX_SHINGLE_SIZE,
-			maxDBSize:      newSize,
-			frameHashTable: make([]int, newSize),
-		}
-		s.matcher.resize(s.matcher.maxShingleSize, s.matcher.maxDBSize)
-	}
-
-	s.resetBufPtrs() // fill shingles with zeros and set buffer pointers to zero
-	return newSize
-}
-
-// perform reset on new sound file load or extract
-func (s *soundSpotter) resetMatchBuffer() {
-	s.muxi = 0        // multiplexer index
-	s.lastAlpha = 0.0 // crossfade coefficient
-	s.winner = -1
-	s.lastWinner = -1
-	s.LoK = 0
-	s.HiK = 0
-	s.lastShingleSize = -1
-	if s.matcher != nil {
-		s.matcher.clearFrameQueue()
-	}
-	s.normsNeedUpdate = true
 }
 
 func (s *soundSpotter) syncOnShingleStart() {

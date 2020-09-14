@@ -18,19 +18,14 @@ func main() {
 	}
 	src := newFixedSource()
 
-	SS := newSoundSpotter(44100, N, 2)
-	SF := &soundFile{}
-
-	ret := SF.sfOpen(strbuf)
+	sf := &soundFile{}
+	ret := sf.sfOpen(strbuf)
 	if ret < 0 {
 		panic(errors.New(fmt.Sprintf("Could not open %s", strbuf)))
 	}
-	SS.setAudioDatabaseBuf(SF.soundBuf, SF.numFrames, int(SF.info.Channels))
 
-	SS.resetShingles(SS.getLengthSourceShingles())
-	SS.resetMatchBuffer()
-	SS.dbSize = SS.featureExtractor.extractSeriesOfVectors(SS)
-	SS.normsNeedUpdate = true
+	s := newSoundSpotter(44100, N, 2, sf.soundBuf, sf.numFrames, int(sf.info.Channels))
+	s.featureExtractor.extractSeriesOfVectors(s)
 
 	inputSamps := make([]float64, N)
 	outputFeatures := make([]float64, N)
@@ -50,11 +45,11 @@ func main() {
 			outputFeatures[nn] = 0.0
 			outputSamps[nn] = 0.0
 		}
-		if SS.dbSize == 0 || SS.bufLen == 0 {
+		if s.dbSize == 0 || s.bufLen == 0 {
 			break
 		}
-		SS.spot(N, inputSamps, outputFeatures, outputSamps)
-		fmt.Printf("%d ", SS.winner)
+		s.spot(N, inputSamps, outputFeatures, outputSamps)
+		fmt.Printf("%d ", s.winner)
 		wav.WriteItems(outputSamps)
 	}
 

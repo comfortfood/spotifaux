@@ -1,7 +1,9 @@
 package main
 
-import "C"
-import "math"
+import (
+	"C"
+	"math"
+)
 
 type idxT C.ulonglong
 

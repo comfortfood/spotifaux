@@ -6,13 +6,13 @@ import (
 	"strconv"
 )
 
-type randomSource struct {
+type inputSource struct {
 	f       *os.File
 	scanner *bufio.Scanner
 }
 
-func newRandomSource() randomSource {
-	r := randomSource{}
+func newInputSource() inputSource {
+	r := inputSource{}
 
 	f, err := os.Open("/Users/wyatttall/git/BLAST/soundspotter/out")
 	if err != nil {
@@ -21,21 +21,21 @@ func newRandomSource() randomSource {
 	r.f = f
 
 	r.scanner = bufio.NewScanner(f)
-	r.scanner.Split(bufio.ScanWords)
+	r.scanner.Split(bufio.ScanLines)
 
 	return r
 }
 
-func (s *randomSource) Float64() float64 {
+func (s *inputSource) Float64() float64 {
 	s.scanner.Scan()
-	f, err := strconv.ParseFloat(s.scanner.Text(), 64)
+	v, err := strconv.ParseFloat(s.scanner.Text(), 64)
 	if err != nil {
 		panic(err)
 	}
 
-	return f
+	return v
 }
 
-func (s *randomSource) Close() {
+func (s *inputSource) Close() {
 	s.f.Close()
 }

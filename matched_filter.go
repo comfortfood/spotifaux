@@ -1,6 +1,8 @@
 package main
 
-import "math"
+import (
+	"math"
+)
 
 var NEGINF = math.Inf(-1)
 

@@ -38,7 +38,7 @@ func main() {
 	} else {
 		strbuf = "/Users/wyatttall/git/BLAST/soundspotter/lib_linux_x86/bell.wav"
 	}
-	r := newRandomSource()
+	r := newInputSource()
 
 	SS := newSoundSpotter(44100, N, 2)
 	SF := &soundFile{}
@@ -55,7 +55,7 @@ func main() {
 }
 
 // runSpotter: run spotter
-func runSpotter(SS *soundSpotter, r randomSource) int {
+func runSpotter(SS *soundSpotter, r inputSource) int {
 	inputFeatures := make([]float64, N)
 	inputSamps := make([]float64, N)
 	outputFeatures := make([]float64, N)
@@ -67,10 +67,10 @@ func runSpotter(SS *soundSpotter, r randomSource) int {
 	iter = 0
 	for ; iter < iterMax; iter++ {
 		nn = 0
-		for ; nn < N; {
+		for nn < N {
 			inputFeatures[nn] = 0.0
-			inputSamps[nn] = 2.0*r.Float64()/MAXRANDINT - 1.0 //(nn%512)/512.0f;
-			//fmt.Printf("%x ", inputSamps[nn])
+			//TODO: wyatt says fixup with real random
+			inputSamps[nn] = r.Float64() //(nn%512)/512.0f;
 			outputFeatures[nn] = 0.0
 			outputSamps[nn] = 0.0
 			nn++
@@ -78,12 +78,11 @@ func runSpotter(SS *soundSpotter, r randomSource) int {
 		SS.run(N, inputFeatures, inputSamps, outputFeatures, outputSamps)
 		fmt.Printf("%d ", SS.reportResult())
 	}
-	fmt.Printf("\n\n")
 	return 0
 }
 
 // test0003: spot mode test
-func test0003(SS *soundSpotter, r randomSource) int {
+func test0003(SS *soundSpotter, r inputSource) int {
 	fmt.Printf("SPOT...")
 	SS.setStatus(SPOT)
 	return runSpotter(SS, r)

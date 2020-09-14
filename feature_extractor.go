@@ -71,13 +71,13 @@ func (e *featureExtractor) initializeFFTWplan() {
 // FFT Hamming window
 func (e *featureExtractor) makeHammingWin() {
 	TWO_PI := 2 * math.Pi
-	oneOverWinLenm1 := 1.0 / (e.WindowLength - 1)
+	oneOverWinLenm1 := 1.0 / float64(e.WindowLength-1)
 	if e.hammingWin != nil {
 		e.hammingWin = nil
 	}
 	e.hammingWin = make(ss_sample, e.WindowLength)
 	for k := 0; k < e.WindowLength; k++ {
-		e.hammingWin[k] = 0.54 - 0.46*math.Cos(TWO_PI*float64(k*oneOverWinLenm1))
+		e.hammingWin[k] = 0.54 - 0.46*math.Cos(TWO_PI*float64(k)*oneOverWinLenm1)
 	}
 	sum := 0.0
 	n := e.WindowLength
@@ -114,7 +114,7 @@ func (e *featureExtractor) makeLogFreqMap() {
 		fftfrqs[i] = float64(i*e.sampleRate) / N
 	}
 	for i = 0; i < e.cqtN; i++ {
-		logfrqs[i] = e.loEdge * math.Pow(2.0, float64(i/e.bpoN))
+		logfrqs[i] = e.loEdge * math.Pow(2.0, float64(i)/float64(e.bpoN))
 		logfbws[i] = math.Max(logfrqs[i]*(fratio-1.0), float64(e.sampleRate)/N)
 	}
 	ovfctr := 0.5475 // Norm constant so CQT'*CQT close to 1.0
@@ -202,6 +202,7 @@ func (e *featureExtractor) computeMFCC(outs1 ss_sample) {
 		for ; b > 0; b-- {
 			e.cqtOut[ptr1] += e.CQT[ptr2] * e.fftPowerSpectrum[ptr3]
 			ptr2++
+			ptr3++
 		}
 	}
 
@@ -230,10 +231,10 @@ func (e *featureExtractor) computeMFCC(outs1 ss_sample) {
 
 // extract feature vectors from multichannel audio float buffer (allocate new vector memory)
 func (e *featureExtractor) extractSeriesOfVectors(databuf ss_sample, numChannels int, buflen int64, vecs, powers ss_sample, dim idxT, numvecs int) int {
-	var ptr1, ptr2 int                          // moving pointer to hamming window
-	oneOverWindowLength := 1.0 / e.WindowLength // power normalization
+	var ptr1, ptr2 int                                   // moving pointer to hamming window
+	oneOverWindowLength := 1.0 / float64(e.WindowLength) // power normalization
 	var xPtr, XPtr int
-	for ; int64(xPtr) < buflen-int64(e.WindowLength)*int64(numChannels) && XPtr < numvecs; {
+	for int64(xPtr) < buflen-int64(e.WindowLength)*int64(numChannels) && XPtr < numvecs {
 		o := 0
 		in := xPtr
 		w := 0

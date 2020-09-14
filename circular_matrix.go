@@ -32,32 +32,25 @@ func (s *seriesOfVectors) copy(source *seriesOfVectors) int {
 }
 
 func vectorSumSquares(vec ss_sample, len int) float64 {
-	sum1 := 0.0
+	sum := 0.0
 	for i := 0; i < len; i++ {
 		v1 := vec[i]
-		sum1 += v1 * v1
+		sum += v1 * v1
 	}
-	return sum1
+	return sum
 }
 
 func seriesSqrt(v []float64, seqlen, sz idxT) {
 	seriesSum(v, seqlen, sz)
-	l := sz - seqlen + 1
-	i := 0
-	for ; l > 0; l-- {
+	for i := 0; i < int(sz-seqlen+1); i++ {
 		v[i] = math.Sqrt(v[i])
-		i++
 	}
 }
 
 func seriesMean(v []float64, seqlen, sz idxT) {
 	seriesSum(v, seqlen, sz)
-	oneOverSeqLen := 1.0 / float64(seqlen)
-	l := sz - seqlen + 1
-	i := 0
-	for ; l > 0; l-- {
-		v[i] *= oneOverSeqLen
-		i++
+	for i := 0; i < int(sz-seqlen+1); i++ {
+		v[i] /= float64(seqlen)
 	}
 }
 
@@ -68,7 +61,7 @@ func seriesSum(v []float64, seqlen, sz idxT) {
 		movingSum += v[spd]
 	}
 
-	for sp := 0; sp <= int(sz-seqlen); sp++ {
+	for sp := 0; sp < int(sz-seqlen+1); sp++ {
 		first := v[sp]
 		last := v[idxT(sp)+seqlen]
 

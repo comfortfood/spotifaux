@@ -6,6 +6,11 @@ import (
 	"strconv"
 )
 
+type source interface {
+	Float64() float64
+	Close() error
+}
+
 type inputSource struct {
 	f       *os.File
 	scanner *bufio.Scanner
@@ -36,6 +41,6 @@ func (s *inputSource) Float64() float64 {
 	return v
 }
 
-func (s *inputSource) Close() {
-	s.f.Close()
+func (s *inputSource) Close() error {
+	return s.f.Close()
 }

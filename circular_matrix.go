@@ -8,35 +8,22 @@ import (
 type idxT C.ulonglong
 
 type seriesOfVectors struct {
-	series ss_sample // sample type
-	M      idxT      // Length of feature vectors
-	N      idxT      // Length of vector series
+	series  ss_sample // sample type
+	rows    idxT      // Length of feature vectors
+	columns idxT      // Length of vector series
 }
 
-func NewSeriesOfVectors(M idxT, N idxT) *seriesOfVectors {
-	return &seriesOfVectors{series: make(ss_sample, M*N), M: M, N: N}
+func NewSeriesOfVectors(rows idxT, columns idxT) *seriesOfVectors {
+	return &seriesOfVectors{series: make(ss_sample, rows*columns), rows: rows, columns: columns}
 }
 
-// Column 0 Accessor
-func (s *seriesOfVectors) getSeries() ss_sample { return s.series }
+func (s *seriesOfVectors) getCol(column idxT) ss_sample { return s.series[column*s.rows:] }
 
-// Column accessor
-func (s *seriesOfVectors) getCol(n idxT) ss_sample { return s.series[n*s.M:] }
-
-// Dimension accessor
-func (s *seriesOfVectors) getRows() idxT {
-	return s.M
-}
-
-func (s *seriesOfVectors) getCols() idxT {
-	return N
-}
-
-func (s *seriesOfVectors) insert(v ss_sample, j idxT) {
-	qp := j * s.M
+func (s *seriesOfVectors) insert(v ss_sample, column idxT) {
+	qp := column * s.rows
 	fp := 0
-	l := s.M
-	for ; l > 0; l-- {
+	row := s.rows
+	for ; row > 0; row-- {
 		s.series[qp] = v[fp] // copy feature extract output to inShingle current pos (muxi)
 		qp++
 		fp++
@@ -44,11 +31,11 @@ func (s *seriesOfVectors) insert(v ss_sample, j idxT) {
 }
 
 func (s *seriesOfVectors) copy(source *seriesOfVectors) int {
-	if !(s.getCols() == source.getCols() && s.getRows() == source.getRows()) {
+	if !(s.columns == source.columns && s.rows == source.rows) {
 		// NEED AN ERROR MESSAGE
 		return 0
 	}
-	copy(s.series, source.getSeries())
+	copy(s.series, source.series)
 	return 1
 }
 
@@ -65,7 +52,7 @@ func vectorSumSquares(vec ss_sample, len int) float64 {
 }
 
 func seriesSqrt(v []float64, seqlen, sz idxT) {
-	seriesSum(v, seqlen, sz) // <<<<<****** INTERCEPT NANS or INFS here ?
+	seriesSum(v, seqlen, sz)
 	l := sz - seqlen + 1
 	i := 0
 	for ; l > 0; l-- {
@@ -85,7 +72,6 @@ func seriesMean(v []float64, seqlen, sz idxT) {
 	}
 }
 
-//<<<<<****** INTERCEPT NANS or INFS here ?
 func seriesSum(v []float64, seqlen, sz idxT) {
 	tmp1 := 0.0
 	tmp2 := 0.0

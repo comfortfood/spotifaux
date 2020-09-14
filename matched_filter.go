@@ -101,11 +101,11 @@ func (f *matchedFilter) incrementalCrossCorrelation(inShingle *seriesOfVectors, 
 	dbSize, muxi, loFeature, hiFeature, loK, hiK int) {
 	var sp, qp idxT
 	var l int
-	numFeatures := inShingle.getRows()
+	numFeatures := inShingle.rows
 	ioff := (idxT(muxi) * numFeatures) + idxT(loFeature)
 	doff := (idxT(muxi+loK) * numFeatures) + idxT(loFeature)
-	isp := inShingle.getSeries()[ioff:]
-	dsp := dbShingles.getSeries()
+	isp := inShingle.series[ioff:]
+	dsp := dbShingles.series
 	totalLen := dbSize - shingleSize - hiK - loK + 1
 	dim := hiFeature - loFeature + 1
 	dpp := muxi

@@ -82,43 +82,40 @@ func (f *matchedFilter) getDD(i int) float64 {
 }
 
 // Incremental multidimensional time series insert
-func (f *matchedFilter) insert(inShingle *seriesOfVectors, shingleSize int, dbShingles *seriesOfVectors, dbSize, muxi,
-	loFeature, hiFeature, loK, hiK int) {
+func (f *matchedFilter) insert(s *soundSpotter) {
 
 	// incrementally compute cross correlation matrix
-	f.incrementalCrossCorrelation(inShingle, shingleSize, dbShingles, dbSize, muxi, loFeature, hiFeature, loK, hiK)
+	f.incrementalCrossCorrelation(s)
 
 	// Keep input L2 norms for correct shingle norming at distance computation stage
-	qPtr := loFeature
-	if inShingle.getCol(idxT(muxi))[qPtr] > NEGINF {
-		f.qNorm[muxi] = vectorSumSquares(inShingle.getCol(idxT(muxi))[qPtr:], hiFeature-loFeature+1)
+	qPtr := s.loFeature
+	if s.inShingle.getCol(idxT(s.muxi))[qPtr] > NEGINF {
+		f.qNorm[s.muxi] = vectorSumSquares(s.inShingle.getCol(idxT(s.muxi))[qPtr:], s.hiFeature-s.loFeature+1)
 	} else {
-		f.qNorm[muxi] = 0.0
+		f.qNorm[s.muxi] = 0.0
 	}
 }
 
-func (f *matchedFilter) incrementalCrossCorrelation(inShingle *seriesOfVectors, shingleSize int, dbShingles *seriesOfVectors,
-	dbSize, muxi, loFeature, hiFeature, loK, hiK int) {
+func (f *matchedFilter) incrementalCrossCorrelation(s *soundSpotter) {
 	var sp, qp idxT
 	var l int
-	numFeatures := inShingle.rows
-	ioff := (idxT(muxi) * numFeatures) + idxT(loFeature)
-	doff := (idxT(muxi+loK) * numFeatures) + idxT(loFeature)
-	isp := inShingle.series[ioff:]
-	dsp := dbShingles.series
-	totalLen := dbSize - shingleSize - hiK - loK + 1
-	dim := hiFeature - loFeature + 1
-	dpp := muxi
+	ioff := (idxT(s.muxi) * s.inShingle.rows) + idxT(s.loFeature)
+	doff := (idxT(s.muxi+s.LoK) * s.inShingle.rows) + idxT(s.loFeature)
+	isp := s.inShingle.series[ioff:]
+	dsp := s.dbShingles.series
+	totalLen := s.dbSize - s.shingleSize - s.HiK - s.LoK + 1
+	dim := s.hiFeature - s.loFeature + 1
+	dpp := s.muxi
 	// Make Correlation matrix entry for this frame against entire source database
 	for ; totalLen > 0; totalLen-- {
 		qp = 0    // input column pointer
 		sp = doff // db column pointer
-		doff += numFeatures
+		doff += s.inShingle.rows
 		// point to correlation cell j,k
-		f.D[muxi][dpp] = 0.0 // initialize correlation cell
-		l = dim              // Size of bounded feature vector
+		f.D[s.muxi][dpp] = 0.0 // initialize correlation cell
+		l = dim                // Size of bounded feature vector
 		for ; l > 0; l-- {
-			f.D[muxi][dpp] += isp[qp] * dsp[sp]
+			f.D[s.muxi][dpp] += isp[qp] * dsp[sp]
 			qp++
 			sp++
 		}

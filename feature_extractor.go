@@ -233,8 +233,8 @@ func (e *featureExtractor) extractSeriesOfVectors(s *soundSpotter) int {
 			sum += val * val
 			in += s.numChannels // extract from left channel only
 		}
-		s.sourcePowers.series[XPtr] = sum * float64(oneOverWindowLength) // database powers calculation in Bels
-		n2 = e.fftN - e.WindowLength                                     // Zero pad the rest of the FFT window
+		s.dbPowers[XPtr] = sum * float64(oneOverWindowLength) // database powers calculation in Bels
+		n2 = e.fftN - e.WindowLength                          // Zero pad the rest of the FFT window
 		for ; n2 > 0; n2-- {
 			e.fftIn.Set(o, 0)
 			o++
@@ -244,7 +244,7 @@ func (e *featureExtractor) extractSeriesOfVectors(s *soundSpotter) int {
 		ptr2 = 0
 		n2 = e.cqtN
 		for ; n2 > 0; n2-- { // Copy to series of vectors
-			s.sourceShingles.series[ptr1] = e.dctOut[ptr2]
+			s.dbShingles.series[ptr1] = e.dctOut[ptr2]
 			ptr1++
 			ptr2++
 		}
@@ -255,7 +255,7 @@ func (e *featureExtractor) extractSeriesOfVectors(s *soundSpotter) int {
 }
 
 // extract feature vectors from MONO input buffer
-func (e *featureExtractor) extractVectorFromMono(n int, inputSamps, outputFeatures ss_sample, power *float64) {
+func (e *featureExtractor) extractVector(n int, inputSamps, outputFeatures ss_sample, power *float64) {
 	w := 0
 	o := 0
 	in := 0 // the MONO input buffer

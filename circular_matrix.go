@@ -19,18 +19,6 @@ func NewSeriesOfVectors(rows idxT, columns idxT) *seriesOfVectors {
 
 func (s *seriesOfVectors) getCol(column idxT) ss_sample { return s.series[column*s.rows:] }
 
-func (s *seriesOfVectors) insert(outputFeatures ss_sample, column idxT) {
-	copy(s.series[column*s.rows:], outputFeatures[:s.rows])
-}
-
-func (s *seriesOfVectors) copy(source *seriesOfVectors) int {
-	if s.columns != source.columns || s.rows != source.rows {
-		return 0
-	}
-	copy(s.series, source.series)
-	return 1
-}
-
 func vectorSumSquares(vec ss_sample, len int) float64 {
 	sum := 0.0
 	for i := 0; i < len; i++ {

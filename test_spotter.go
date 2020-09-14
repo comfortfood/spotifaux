@@ -27,13 +27,10 @@ func main() {
 	}
 	SS.setAudioDatabaseBuf(SF.soundBuf, SF.numFrames, int(SF.info.Channels))
 
-	// feature extraction
-	SS.setStatus(EXTRACT)
-
-	SS.run(N, nil, nil, nil)
-
-	// SPOT mode test
-	SS.setStatus(SPOT)
+	SS.resetShingles(SS.getLengthSourceShingles())
+	SS.resetMatchBuffer()
+	SS.dbSize = SS.featureExtractor.extractSeriesOfVectors(SS)
+	SS.normsNeedUpdate = true
 
 	inputSamps := make([]float64, N)
 	outputFeatures := make([]float64, N)
@@ -47,16 +44,17 @@ func main() {
 
 	iter = 0
 	for ; iter < iterMax; iter++ {
-		nn = 0
-		for nn < N {
+		for nn = 0; nn < N; nn++ {
 			//TODO: wyatt says fixup with real random
 			inputSamps[nn] = src.Float64() //(nn%512)/512.0f;
 			outputFeatures[nn] = 0.0
 			outputSamps[nn] = 0.0
-			nn++
 		}
-		SS.run(N, inputSamps, outputFeatures, outputSamps)
-		fmt.Printf("%d ", SS.reportResult())
+		if SS.dbSize == 0 || SS.bufLen == 0 {
+			break
+		}
+		SS.spot(N, inputSamps, outputFeatures, outputSamps)
+		fmt.Printf("%d ", SS.winner)
 		wav.WriteItems(outputSamps)
 	}
 

@@ -45,8 +45,8 @@ func (m *matcher) clearFrameQueue() {
 // Substantially Modified: Michael A. Casey, August 24th - 27th 2007
 // Factored out dependency on SoundSpotter class, August 8th - 9th 2009
 // Added power features for threshold tests
-func (m *matcher) match(shingleSize, dbSize, loDataLoc, hiDataLoc int,
-	inPwMn float64, powers ss_sample, pwr_abs_thresh float64) int {
+func (m *matcher) match(s *soundSpotter) int {
+	inPwMn := s.inPowers[0]
 	pwr_rel_thresh := 0.1
 	dist := 0.0
 	minD := 1e6
@@ -54,16 +54,16 @@ func (m *matcher) match(shingleSize, dbSize, loDataLoc, hiDataLoc int,
 	minDist := 10.0
 	winner := -1
 	// Perform the recursive Matched Filtering (core match algorithm)
-	m.execute(shingleSize, dbSize, loDataLoc, hiDataLoc)
+	m.execute(s.shingleSize, s.dbSize, s.LoK, s.HiK)
 	qN0 := m.getQNorm(0) // pre-calculate denominator coefficient
 	// DD now contains (1 x N) multi-dimensional matched filter output
-	oneOverW := 1.0 / float64(shingleSize)
-	for k := loDataLoc; k < dbSize-shingleSize-hiDataLoc+1; k++ {
+	oneOverW := 1.0 / float64(s.shingleSize)
+	for k := s.LoK; k < s.dbSize-s.shingleSize-s.HiK+1; k++ {
 		// Test frame Queue
 		if m.frameHashTable[int(float64(k)*oneOverW)] == 0 {
 			sk := m.getSNorm(k)
-			pk := powers[k]
-			if !math.IsNaN(pk) && !(sk == NEGINF) && pk > pwr_abs_thresh &&
+			pk := s.dbPowersCurrent[k]
+			if !math.IsNaN(pk) && !(sk == NEGINF) && pk > s.pwr_abs_thresh &&
 				(!m.useRelativeThreshold || inPwMn/pk < pwr_rel_thresh) {
 				// The norm matched filter distance  is the Euclidean distance between the vectors
 				dist = 2 - 2/(qN0*sk)*m.getDD(k) // squared Euclidean distance

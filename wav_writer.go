@@ -20,7 +20,7 @@ func NewWavWriter(filename string) *wavWriter {
 	return &wavWriter{f: f}
 }
 
-func (w *wavWriter) WriteItems(samples ss_sample) {
+func (w *wavWriter) WriteItems(samples []float64) {
 	_, err := w.f.WriteItems(samples)
 	if err != nil {
 		panic(err)

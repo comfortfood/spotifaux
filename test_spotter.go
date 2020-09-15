@@ -9,28 +9,34 @@ const ITER_MAX = 1000
 const N = 2048
 
 func main() {
-	var strbuf string
+	var fileName string
 	if len(os.Args) > 1 {
-		strbuf = os.Args[1]
+		fileName = os.Args[1]
 	} else {
-		strbuf = "/Users/wyatttall/git/BLAST/soundspotter/lib_linux_x86/bell.wav"
+		fileName = "/Users/wyatttall/git/spotifaux/bell2.wav"
 	}
-	src := newFixedSource()
-	sf, err := newSoundFile(strbuf)
+	src := newWavSource()
+	sf, err := newSoundFile(fileName)
 	if err != nil {
 		panic(err)
 	}
 
-	s := newSoundSpotter(44100, N, 2, sf.soundBuf, sf.numFrames, int(sf.info.Channels))
+	audioDatabaseBuf := make([]float64, sf.frames*int64(sf.channels))
+	_, err = sf.ReadFrames(audioDatabaseBuf)
+	if err != nil {
+		panic(err)
+	}
+
+	s := newSoundSpotter(44100, N, sf.channels, audioDatabaseBuf, sf.frames)
 	s.featureExtractor.extractSeriesOfVectors(s)
 
-	inputSamps := make([]float64, N)
-	outputFeatures := make([]float64, N)
-	outputSamps := make([]float64, N)
+	inputSamps := make([]float64, N*sf.channels)
+	outputFeatures := make([]float64, N*sf.channels)
+	outputSamps := make([]float64, N*sf.channels)
 	iter := 0
 	nn := 0
 	iterMax := ITER_MAX
-	//iterMax = 76 // wyatt - bell source
+	iterMax = 652
 
 	wav := NewWavWriter("out.wav")
 
@@ -50,6 +56,12 @@ func main() {
 		wav.WriteItems(outputSamps)
 	}
 
-	_ = src.Close()
-	_ = wav.Close()
+	err = src.Close()
+	if err != nil {
+		panic(err)
+	}
+	err = wav.Close()
+	if err != nil {
+		panic(err)
+	}
 }

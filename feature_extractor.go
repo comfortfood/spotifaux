@@ -219,7 +219,7 @@ func (e *featureExtractor) extractSeriesOfVectors(s *soundSpotter) {
 	var ptr1, ptr2 int                                   // moving pointer to hamming window
 	oneOverWindowLength := 1.0 / float64(e.WindowLength) // power normalization
 	var xPtr, dbSize int
-	for int64(xPtr) < s.bufLen-int64(e.WindowLength)*int64(s.numChannels) && dbSize < s.getLengthSourceShingles() {
+	for int64(xPtr) <= s.bufLen-int64(e.WindowLength)*int64(s.numChannels) && dbSize <= s.getLengthSourceShingles() {
 		o := 0
 		in := xPtr
 		w := 0

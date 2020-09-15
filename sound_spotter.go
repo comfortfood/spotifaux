@@ -57,12 +57,12 @@ type soundSpotter struct {
 
 // multi-channel soundspotter
 // expects MONO input and possibly multi-channel DATABASE audio output
-func newSoundSpotter(sampleRate, WindowLength, numChannels int, soundBuf ss_sample, numFrames int64, channels int) *soundSpotter {
+func newSoundSpotter(sampleRate, WindowLength, channels int, audioDatabaseBuf ss_sample, numFrames int64) *soundSpotter {
 
 	s := &soundSpotter{
 		sampleRate:      sampleRate,
 		WindowLength:    WindowLength,
-		numChannels:     numChannels,
+		numChannels:     channels,
 		lastLoFeature:   -1,
 		lastHiFeature:   -1,
 		loFeature:       3,
@@ -73,11 +73,15 @@ func newSoundSpotter(sampleRate, WindowLength, numChannels int, soundBuf ss_samp
 		lastWinner:      -1,
 		winner:          -1,
 		pwr_abs_thresh:  0.000001,
-		LoK:             -1,
-		HiK:             -1,
 		lastLoK:         -1,
 		lastHiK:         -1,
 		envFollow:       0,
+		dbSize:          0,
+		muxi:            0,   // multiplexer index
+		lastAlpha:       0.0, // crossfade coefficient
+		LoK:             0,
+		HiK:             0,
+		normsNeedUpdate: true,
 	}
 
 	s.featureExtractor = &featureExtractor{sampleRate: sampleRate, WindowLength: WindowLength, fftN: SS_FFT_LENGTH}
@@ -87,7 +91,7 @@ func newSoundSpotter(sampleRate, WindowLength, numChannels int, soundBuf ss_samp
 	s.inShingle = NewSeriesOfVectors(idxT(s.featureExtractor.cqtN), idxT(SS_MAX_SHINGLE_SZ))
 	s.inPowers = make(ss_sample, SS_MAX_SHINGLE_SZ)
 
-	s.audioOutputBuffer = make(ss_sample, WindowLength*SS_MAX_SHINGLE_SZ*numChannels) // fix size at constructor ?
+	s.audioOutputBuffer = make(ss_sample, WindowLength*SS_MAX_SHINGLE_SZ*channels) // fix size at constructor ?
 
 	s.dbShingles = NewSeriesOfVectors(idxT(s.featureExtractor.cqtN), idxT(s.maxF))
 	s.dbPowers = make(ss_sample, s.maxF)
@@ -99,7 +103,6 @@ func newSoundSpotter(sampleRate, WindowLength, numChannels int, soundBuf ss_samp
 	}
 	s.matcher.resize(s.matcher.maxShingleSize, s.matcher.maxDBSize)
 
-	s.dbSize = 0
 	if s.inShingle != nil && s.dbShingles != nil {
 		s.zeroBuf(s.dbShingles.series)
 		s.zeroBuf(s.inShingle.series)
@@ -109,20 +112,12 @@ func newSoundSpotter(sampleRate, WindowLength, numChannels int, soundBuf ss_samp
 	s.zeroBuf(s.audioOutputBuffer)
 
 	s.numChannels = channels
-	s.audioDatabaseBuf = soundBuf
+	s.audioDatabaseBuf = audioDatabaseBuf
 	s.bufLen = numFrames * int64(channels)
 	if numFrames > int64(s.maxF)*int64(s.WindowLength)*int64(channels) {
 		s.bufLen = int64(s.maxF) * int64(s.WindowLength) * int64(channels)
 	}
-	s.muxi = 0        // multiplexer index
-	s.lastAlpha = 0.0 // crossfade coefficient
-	s.winner = -1
-	s.lastWinner = -1
-	s.LoK = 0
-	s.HiK = 0
-	s.lastShingleSize = -1
 	s.matcher.clearFrameQueue()
-	s.normsNeedUpdate = true
 
 	return s
 }
@@ -194,28 +189,28 @@ func (s *soundSpotter) match() {
 					p++
 					q++
 				}
-				// Cross-fade between current output shingle and one frame past end
-				// of last winning shingle added to beginning of current
-				if s.lastWinner > -1 && s.lastWinner < s.dbSize-s.shingleSize-1 {
-					p = 0                                                               // first scanning pointer
-					q = (s.lastWinner + s.shingleSize) * s.WindowLength * s.numChannels // one past end of last output buffer
-					p1 := s.winner * s.WindowLength * s.numChannels                     // this winner (first frame)
-					w1 := 0                                                             // forwards half-hamming pointer
-					w2 := s.WindowLength - 1                                            // backwards half-hamming pointer
-					nn = s.WindowLength                                                 // first audio output buffer only
-					c := 0
-					for ; nn > 0; nn-- {
-						c = s.numChannels
-						for ; c > 0; c-- {
-							s.audioOutputBuffer[p] = alpha*s.audioDatabaseBuf[p1]*s.hammingWin2[w1] + s.lastAlpha*s.audioDatabaseBuf[q]*s.hammingWin2[w2]
-							p++
-							p1++
-							q++
-						}
-						w1++
-						w2--
-					}
-				}
+				//// Cross-fade between current output shingle and one frame past end
+				//// of last winning shingle added to beginning of current
+				//if s.lastWinner > -1 && s.lastWinner < s.dbSize-s.shingleSize-1 {
+				//	p = 0                                                               // first scanning pointer
+				//	q = (s.lastWinner + s.shingleSize) * s.WindowLength * s.numChannels // one past end of last output buffer
+				//	p1 := s.winner * s.WindowLength * s.numChannels                     // this winner (first frame)
+				//	w1 := 0                                                             // forwards half-hamming pointer
+				//	w2 := s.WindowLength - 1                                            // backwards half-hamming pointer
+				//	nn = s.WindowLength                                                 // first audio output buffer only
+				//	c := 0
+				//	for ; nn > 0; nn-- {
+				//		c = s.numChannels
+				//		for ; c > 0; c-- {
+				//			s.audioOutputBuffer[p] = alpha*s.audioDatabaseBuf[p1]*s.hammingWin2[w1] + s.lastAlpha*s.audioDatabaseBuf[q]*s.hammingWin2[w2]
+				//			p++
+				//			p1++
+				//			q++
+				//		}
+				//		w1++
+				//		w2--
+				//	}
+				//}
 			}
 			s.lastAlpha = alpha
 		}

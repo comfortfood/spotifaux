@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"github.com/mkb218/gosndfile/sndfile"
 )
 
@@ -13,45 +14,35 @@ type soundFile struct {
 	info      *sndfile.Info
 }
 
-func (f *soundFile) sfCleanUp() {
-	if f.inFile != nil {
-		f.soundBuf = nil
-		defer f.inFile.Close()
-		f.inFile = nil
-	}
-}
-
 // Attempt to open sound file
 // return -1 if cannot open soundFile
 // else return number of frames read
-func (f *soundFile) sfOpen(inFileName string) int64 {
-	f.sfCleanUp()
+func newSoundFile(inFileName string) (*soundFile, error) {
+	f := &soundFile{}
 
 	// Open sound file
 	f.info = &sndfile.Info{}
 	inFile, err := sndfile.Open(inFileName, sndfile.Read, f.info)
 	if err != nil {
-		return -1
+		return nil, err
 	}
 	f.inFile = inFile
 
 	if !sndfile.FormatCheck(*f.info) {
-		return -1
+		panic(errors.New("bad format"))
 	}
 	f.numFrames = f.info.Frames
 	if f.numFrames > SF_MAX_NUM_FRAMES {
 		f.numFrames = SF_MAX_NUM_FRAMES
 	}
-	result := f.loadSound()
-	return result
+	f.soundBuf = make(ss_sample, f.numFrames*int64(f.info.Channels))
+	_, err = f.inFile.ReadFrames(f.soundBuf)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
 }
 
-// Read the entire soundfile into a new float buffer
-func (f *soundFile) loadSound() int64 {
-	f.soundBuf = make(ss_sample, f.numFrames*int64(f.info.Channels))
-	numRead, err := f.inFile.ReadFrames(f.soundBuf)
-	if err != nil {
-		panic(err)
-	}
-	return numRead
+func (f *soundFile) Close() error {
+	return f.inFile.Close()
 }

@@ -1,20 +1,14 @@
 package main
 
-import (
-	"errors"
-	"fmt"
-)
-
 type wavSource struct {
 	soundBuf ss_sample
 	i        int
 }
 
 func newWavSource() *wavSource {
-	sf := &soundFile{}
-	retval := sf.sfOpen("/Users/wyatttall/git/BLAST/soundspotter/lib_linux_x86/bell.wav")
-	if retval < 0 {
-		panic(errors.New(fmt.Sprintf("Could not open %s", "/Users/wyatttall/git/BLAST/soundspotter/lib_linux_x86/bell.wav")))
+	sf, err := newSoundFile("/Users/wyatttall/git/BLAST/soundspotter/lib_linux_x86/bell.wav")
+	if err != nil {
+		panic(err)
 	}
 	newSoundSpotter(44100, N, 2, sf.soundBuf, sf.numFrames, int(sf.info.Channels))
 

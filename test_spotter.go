@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 )
@@ -17,11 +16,9 @@ func main() {
 		strbuf = "/Users/wyatttall/git/BLAST/soundspotter/lib_linux_x86/bell.wav"
 	}
 	src := newFixedSource()
-
-	sf := &soundFile{}
-	ret := sf.sfOpen(strbuf)
-	if ret < 0 {
-		panic(errors.New(fmt.Sprintf("Could not open %s", strbuf)))
+	sf, err := newSoundFile(strbuf)
+	if err != nil {
+		panic(err)
 	}
 
 	s := newSoundSpotter(44100, N, 2, sf.soundBuf, sf.numFrames, int(sf.info.Channels))

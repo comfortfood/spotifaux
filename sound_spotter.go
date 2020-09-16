@@ -22,18 +22,18 @@ type soundSpotter struct {
 
 	maxF int // Maximum number of source frames to extract (initial size of database)
 
-	loFeature        int
-	hiFeature        int
-	lastLoFeature    int       // persist feature parameters for database norming
-	lastHiFeature    int       // persist feature parameters for database norming
-	normsNeedUpdate  bool      // flag to indicate that database norms are dirty
-	audioDatabaseBuf ss_sample // SoundSpotter pointer to PD internal buf
-	bufLen           int64
+	loFeature       int
+	hiFeature       int
+	lastLoFeature   int       // persist feature parameters for database norming
+	lastHiFeature   int       // persist feature parameters for database norming
+	normsNeedUpdate bool      // flag to indicate that database norms are dirty
+	dbBuf           ss_sample // SoundSpotter pointer to PD internal buf
+	bufLen          int64
 
-	audioOutputBuffer ss_sample // Matchers buffer
-	muxi              int       // SHINGLEing overlap-add buffer multiplexer index
-	lastAlpha         float64   // envelope follow of previous output
-	hammingWin2       ss_sample
+	outputBuffer   ss_sample // Matchers buffer
+	muxi           int       // SHINGLEing overlap-add buffer multiplexer index
+	lastAlpha      float64   // envelope follow of previous output
+	hammingWinHalf ss_sample
 
 	shingleSize     int
 	lastShingleSize int
@@ -91,7 +91,7 @@ func newSoundSpotter(sampleRate, WindowLength, channels int, audioDatabaseBuf ss
 	s.inShingle = NewSeriesOfVectors(idxT(s.featureExtractor.cqtN), idxT(SS_MAX_SHINGLE_SZ))
 	s.inPowers = make(ss_sample, SS_MAX_SHINGLE_SZ)
 
-	s.audioOutputBuffer = make(ss_sample, WindowLength*SS_MAX_SHINGLE_SZ*channels) // fix size at constructor ?
+	s.outputBuffer = make(ss_sample, WindowLength*SS_MAX_SHINGLE_SZ*channels) // fix size at constructor ?
 
 	s.dbShingles = NewSeriesOfVectors(idxT(s.featureExtractor.cqtN), idxT(s.maxF))
 	s.dbPowers = make(ss_sample, s.maxF)
@@ -109,10 +109,10 @@ func newSoundSpotter(sampleRate, WindowLength, channels int, audioDatabaseBuf ss
 		s.zeroBuf(s.inPowers)
 		s.zeroBuf(s.dbPowers)
 	}
-	s.zeroBuf(s.audioOutputBuffer)
+	s.zeroBuf(s.outputBuffer)
 
 	s.numChannels = channels
-	s.audioDatabaseBuf = audioDatabaseBuf
+	s.dbBuf = audioDatabaseBuf
 	s.bufLen = numFrames * int64(channels)
 	if numFrames > int64(s.maxF)*int64(s.WindowLength)*int64(channels) {
 		s.bufLen = int64(s.maxF) * int64(s.WindowLength) * int64(channels)
@@ -128,11 +128,9 @@ func (s *soundSpotter) getLengthSourceShingles() int {
 
 // This half hamming window is used for cross fading output buffers
 func (s *soundSpotter) makeHammingWin2() {
-	s.hammingWin2 = make(ss_sample, s.WindowLength)
-	TWO_PI := 2 * 3.14159265358979
-	oneOverWinLen2m1 := 1.0 / float64(s.WindowLength*2-1)
+	s.hammingWinHalf = make(ss_sample, s.WindowLength)
 	for k := 0; k < s.WindowLength; k++ {
-		s.hammingWin2[k] = 0.54 - 0.46*math.Cos(TWO_PI*float64(k)*oneOverWinLen2m1)
+		s.hammingWinHalf[k] = 0.54 - 0.46*math.Cos(2*math.Pi*float64(k)/float64(s.WindowLength*2-1))
 	}
 }
 
@@ -157,7 +155,7 @@ func (s *soundSpotter) spot(n int, inputSamps, outputFeatures, outputSamps ss_sa
 	p1 := 0
 	nn := s.WindowLength * s.numChannels
 	for ; nn > 0; nn-- {
-		outputSamps[p1] = s.audioOutputBuffer[p2] // multi-channel output
+		outputSamps[p1] = s.outputBuffer[p2] // multi-channel output
 		p1++
 		p2++
 	}
@@ -166,7 +164,7 @@ func (s *soundSpotter) spot(n int, inputSamps, outputFeatures, outputSamps ss_sa
 // Perform matching on shingle boundary
 func (s *soundSpotter) match() {
 	// zero output buffer in case we don't match anything
-	s.zeroBuf(s.audioOutputBuffer)
+	s.zeroBuf(s.outputBuffer)
 	// calculate powers for detecting silence and balancing output with input
 	seriesMean(s.inPowers, idxT(s.shingleSize), idxT(s.shingleSize))
 	if s.inPowers[0] > s.pwr_abs_thresh {
@@ -174,20 +172,14 @@ func (s *soundSpotter) match() {
 		// matched filter matching to get winning database shingle
 		s.winner = s.matcher.match(s)
 		if s.winner > -1 {
-			p := 0 // MULTI-CHANNEL OUTPUT
-			q := s.winner * s.WindowLength * s.numChannels
-			env1 := s.inPowers[0]
-			env2 := s.dbPowers[s.winner]
 			// Envelope follow factor is alpha * sqrt(env1/env2) + (1-alpha)
 			// sqrt(env2) has already been calculated, only take sqrt(env1) here
-			alpha := s.envFollow*math.Sqrt(env1/env2) + (1 - s.envFollow)
+			alpha := s.envFollow*math.Sqrt(s.inPowers[0]/s.dbPowers[s.winner]) + (1 - s.envFollow)
 			if s.winner > -1 {
 				// Copy winning samples to output buffer, these could be further processed
-				nn := s.WindowLength * s.shingleSize * s.numChannels
-				for ; nn > 0; nn-- {
-					s.audioOutputBuffer[p] = alpha * s.audioDatabaseBuf[q]
-					p++
-					q++
+				// MULTI-CHANNEL OUTPUT
+				for p := 0; p < s.shingleSize*s.WindowLength*s.numChannels; p++ {
+					s.outputBuffer[p] = alpha * s.dbBuf[s.winner*s.WindowLength*s.numChannels+p]
 				}
 				//// Cross-fade between current output shingle and one frame past end
 				//// of last winning shingle added to beginning of current
@@ -202,7 +194,7 @@ func (s *soundSpotter) match() {
 				//	for ; nn > 0; nn-- {
 				//		c = s.numChannels
 				//		for ; c > 0; c-- {
-				//			s.audioOutputBuffer[p] = alpha*s.audioDatabaseBuf[p1]*s.hammingWin2[w1] + s.lastAlpha*s.audioDatabaseBuf[q]*s.hammingWin2[w2]
+				//			s.outputBuffer[p] = alpha*s.dbBuf[p1]*s.hammingWinHalf[w1] + s.lastAlpha*s.dbBuf[q]*s.hammingWinHalf[w2]
 				//			p++
 				//			p1++
 				//			q++

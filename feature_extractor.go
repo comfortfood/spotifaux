@@ -58,22 +58,13 @@ func (e *featureExtractor) initializeFFTWplan() {
 
 // FFT Hamming window
 func (e *featureExtractor) makeHammingWin() {
-	TWO_PI := 2 * math.Pi
-	oneOverWinLenm1 := 1.0 / float64(e.WindowLength-1)
-	if e.hammingWin != nil {
-		e.hammingWin = nil
-	}
 	e.hammingWin = make(ss_sample, e.WindowLength)
-	for k := 0; k < e.WindowLength; k++ {
-		e.hammingWin[k] = 0.54 - 0.46*math.Cos(TWO_PI*float64(k)*oneOverWinLenm1)
-	}
 	sum := 0.0
-	n := e.WindowLength
-	w := 0
-	for ; n > 0; n-- {
-		sum += e.hammingWin[w] * e.hammingWin[w] // Make a global value, compute only once
-		w++
+	for k := 0; k < e.WindowLength; k++ {
+		e.hammingWin[k] = 0.54 - 0.46*math.Cos(2*math.Pi*float64(k)/float64(e.WindowLength-1))
+		sum += e.hammingWin[k] * e.hammingWin[k]
 	}
+
 	e.winNorm = 1.0 / (math.Sqrt(sum * float64(e.WindowLength)))
 }
 
@@ -216,42 +207,23 @@ func (e *featureExtractor) computeMFCC(outs1 ss_sample) {
 
 // extract feature vectors from multichannel audio float buffer (allocate new vector memory)
 func (e *featureExtractor) extractSeriesOfVectors(s *soundSpotter) {
-	var ptr1, ptr2 int                                   // moving pointer to hamming window
-	oneOverWindowLength := 1.0 / float64(e.WindowLength) // power normalization
-	var xPtr, dbSize int
-	for int64(xPtr) <= s.bufLen-int64(e.WindowLength)*int64(s.numChannels) && dbSize <= s.getLengthSourceShingles() {
-		o := 0
-		in := xPtr
-		w := 0
-		n2 := e.WindowLength
-		var val, sum float64
-		for ; n2 > 0; n2-- {
-			val = s.audioDatabaseBuf[in]
-			e.fftIn.Set(o, complex(val*e.hammingWin[w]*e.winNorm, 0))
-			o++
-			w++
+	i := 0
+	for ; i < s.getLengthSourceShingles()-1; i++ {
+		sum := 0.0
+		j := 0
+		for ; j < e.WindowLength; j++ {
+			val := s.dbBuf[(i*e.WindowLength+j)*s.numChannels] // extract from left channel only
+			e.fftIn.Set(j, complex(val*e.hammingWin[j]*e.winNorm, 0))
 			sum += val * val
-			in += s.numChannels // extract from left channel only
 		}
-		s.dbPowers[dbSize] = sum * float64(oneOverWindowLength) // database powers calculation in Bels
-		n2 = e.fftN - e.WindowLength                            // Zero pad the rest of the FFT window
-		for ; n2 > 0; n2-- {
-			e.fftIn.Set(o, 0)
-			o++
+		for ; j < e.fftN; j++ {
+			e.fftIn.Set(j, 0) // Zero pad the rest of the FFT window
 		}
+		s.dbPowers[i] = sum / float64(e.WindowLength) // database powers calculation in Bels
 		e.computeMFCC(e.dctOut)
-		ptr1 = dbSize * e.cqtN
-		ptr2 = 0
-		n2 = e.cqtN
-		for ; n2 > 0; n2-- { // Copy to series of vectors
-			s.dbShingles.series[ptr1] = e.dctOut[ptr2]
-			ptr1++
-			ptr2++
-		}
-		xPtr += e.WindowLength * s.numChannels
-		dbSize++
+		copy(s.dbShingles.series[i*e.cqtN:], e.dctOut) // Copy to series of vectors
 	}
-	s.dbSize = dbSize
+	s.dbSize = i
 	s.normsNeedUpdate = true
 }
 

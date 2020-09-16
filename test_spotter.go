@@ -13,9 +13,12 @@ func main() {
 	if len(os.Args) > 1 {
 		fileName = os.Args[1]
 	} else {
-		fileName = "/Users/wyatttall/git/spotifaux/bell2.wav"
+		fileName = "/Users/wyatttall/git/BLAST/soundspotter/lib_linux_x86/bell.wav"
+		//fileName = "/Users/wyatttall/git/spotifaux/bell2.wav"
 	}
-	src := newWavSource()
+	var src source
+	src = newFixedSource()
+	//src = newWavSource()
 	sf, err := newSoundFile(fileName)
 	if err != nil {
 		panic(err)
@@ -36,7 +39,7 @@ func main() {
 	iter := 0
 	nn := 0
 	iterMax := ITER_MAX
-	iterMax = 652
+	//iterMax = 76
 
 	wav := NewWavWriter("out.wav")
 

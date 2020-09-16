@@ -16,8 +16,8 @@ type fixedSource struct {
 	scanner *bufio.Scanner
 }
 
-func newFixedSource() fixedSource {
-	r := fixedSource{}
+func newFixedSource() *fixedSource {
+	r := &fixedSource{}
 
 	f, err := os.Open("/Users/wyatttall/git/BLAST/soundspotter/out")
 	if err != nil {

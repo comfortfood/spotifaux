@@ -12,15 +12,17 @@ func newWavSource() *wavSource {
 	}
 	defer sf.Close()
 
-	audioDatabaseBuf := make([]float64, sf.frames*int64(sf.channels))
-	_, err = sf.ReadFrames(audioDatabaseBuf)
+	dbBuf := make([]float64, sf.frames*int64(sf.channels))
+	_, err = sf.ReadFrames(dbBuf)
 	if err != nil {
 		panic(err)
 	}
 
-	newSoundSpotter(44100, N, sf.channels, audioDatabaseBuf, sf.frames)
+	e := newFeatureExtractor(44100, WindowLength, SS_FFT_LENGTH)
 
-	return &wavSource{audioDatabaseBuf: audioDatabaseBuf}
+	newSoundSpotter(44100, WindowLength, sf.channels, dbBuf, sf.frames, e.cqtN)
+
+	return &wavSource{audioDatabaseBuf: dbBuf}
 }
 
 func (s *wavSource) Float64() float64 {

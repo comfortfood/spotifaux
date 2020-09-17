@@ -6,7 +6,7 @@ import (
 )
 
 const ITER_MAX = 1000
-const N = 2048
+const WindowLength = 2048
 
 func main() {
 	var fileName string
@@ -24,18 +24,21 @@ func main() {
 		panic(err)
 	}
 
-	audioDatabaseBuf := make([]float64, sf.frames*int64(sf.channels))
-	_, err = sf.ReadFrames(audioDatabaseBuf)
+	dbBuf := make([]float64, sf.frames*int64(sf.channels))
+	_, err = sf.ReadFrames(dbBuf)
 	if err != nil {
 		panic(err)
 	}
 
-	s := newSoundSpotter(44100, N, sf.channels, audioDatabaseBuf, sf.frames)
-	s.featureExtractor.extractSeriesOfVectors(s)
+	e := newFeatureExtractor(44100, WindowLength, SS_FFT_LENGTH)
 
-	inputSamps := make([]float64, N*sf.channels)
-	outputFeatures := make([]float64, N*sf.channels)
-	outputSamps := make([]float64, N*sf.channels)
+	s := newSoundSpotter(44100, WindowLength, sf.channels, dbBuf, sf.frames, e.cqtN)
+
+	e.extractSeriesOfVectors(s)
+
+	inputSamps := make([]float64, WindowLength*sf.channels)
+	outputFeatures := make([]float64, WindowLength*sf.channels)
+	outputSamps := make([]float64, WindowLength*sf.channels)
 	iter := 0
 	nn := 0
 	iterMax := ITER_MAX
@@ -44,8 +47,9 @@ func main() {
 	wav := NewWavWriter("out.wav")
 
 	iter = 0
+	muxi := 0
 	for ; iter < iterMax; iter++ {
-		for nn = 0; nn < N; nn++ {
+		for nn = 0; nn < WindowLength; nn++ {
 			//TODO: wyatt says fixup with real random
 			inputSamps[nn] = src.Float64() //(nn%512)/512.0f;
 			outputFeatures[nn] = 0.0
@@ -54,7 +58,28 @@ func main() {
 		if s.dbSize == 0 || s.bufLen == 0 {
 			break
 		}
-		s.spot(N, inputSamps, outputFeatures, outputSamps)
+
+		if muxi == 0 {
+			s.syncOnShingleStart() // update parameters at shingleStart
+		}
+
+		// inputSamps holds the audio samples, convert inputSamps to outputFeatures (FFT buffer)
+		e.extractVector(inputSamps, outputFeatures, &s.inPowers[muxi])
+		// insert MFCC into SeriesOfVectors
+		copy(s.inShingle.getCol(idxT(muxi)), outputFeatures[:s.inShingle.rows])
+		// insert shingles into Matcher
+		s.matcher.insert(s, muxi)
+		// Do the matching at shingle end
+		if muxi == (s.shingleSize - 1) {
+			s.match()
+		}
+
+		// post-insert buffer multiplex increment
+		muxi = (muxi + 1) % s.shingleSize
+
+		// generate current frame's output sample and update everything
+		copy(outputSamps, s.outputBuffer[muxi*s.wc:(muxi+1)*s.wc])
+
 		fmt.Printf("%d ", s.winner)
 		wav.WriteItems(outputSamps)
 	}

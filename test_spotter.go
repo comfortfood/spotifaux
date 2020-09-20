@@ -14,11 +14,11 @@ func main() {
 		fileName = os.Args[1]
 	} else {
 		fileName = "/Users/wyatttall/git/BLAST/soundspotter/lib_linux_x86/bell.wav"
-		//fileName = "/Users/wyatttall/git/spotifaux/bell2.wav"
+		fileName = "/Users/wyatttall/git/spotifaux/bell2.wav"
 	}
 	var src source
 	src = newFixedSource()
-	//src = newWavSource()
+	src = newWavSource()
 	sf, err := newSoundFile(fileName)
 	if err != nil {
 		panic(err)
@@ -38,13 +38,14 @@ func main() {
 
 	inputSamps := make([]float64, WindowLength*sf.channels)
 	outputFeatures := make([]float64, WindowLength*sf.channels)
-	outputSamps := make([]float64, WindowLength*sf.channels)
 	iter := 0
 	nn := 0
 	iterMax := ITER_MAX
 	//iterMax = 76
 
 	wav := NewWavWriter("out.wav")
+
+	foundWinner := false
 
 	iter = 0
 	muxi := 0
@@ -53,7 +54,6 @@ func main() {
 			//TODO: wyatt says fixup with real random
 			inputSamps[nn] = src.Float64() //(nn%512)/512.0f;
 			outputFeatures[nn] = 0.0
-			outputSamps[nn] = 0.0
 		}
 		if s.dbSize == 0 || s.bufLen == 0 {
 			break
@@ -72,16 +72,15 @@ func main() {
 		// Do the matching at shingle end
 		if muxi == (s.shingleSize - 1) {
 			s.match()
+			if s.winner != -1 || foundWinner {
+				foundWinner = true
+				fmt.Printf("%d ", s.winner)
+				wav.WriteItems(s.outputBuffer)
+			}
 		}
 
 		// post-insert buffer multiplex increment
 		muxi = (muxi + 1) % s.shingleSize
-
-		// generate current frame's output sample and update everything
-		copy(outputSamps, s.outputBuffer[muxi*s.wc:(muxi+1)*s.wc])
-
-		fmt.Printf("%d ", s.winner)
-		wav.WriteItems(outputSamps)
 	}
 
 	err = src.Close()

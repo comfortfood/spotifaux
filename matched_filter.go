@@ -97,10 +97,10 @@ func (f *matchedFilter) insert(s *soundSpotter, muxi int) {
 func (f *matchedFilter) incrementalCrossCorrelation(s *soundSpotter, muxi int) {
 
 	ioff := (idxT(muxi) * s.inShingle.rows) + idxT(s.loFeature)
-	doff := (idxT(muxi+s.LoK) * s.inShingle.rows) + idxT(s.loFeature)
+	doff := (idxT(muxi) * s.inShingle.rows) + idxT(s.loFeature)
 	isp := s.inShingle.series[ioff:]
 	dsp := s.dbShingles
-	totalLen := s.dbSize - s.shingleSize - s.HiK - s.LoK + 1
+	totalLen := s.dbSize - s.shingleSize + 1
 	dim := s.hiFeature - s.loFeature + 1
 	dpp := muxi
 	// Make Correlation matrix entry for this frame against entire source database
@@ -120,11 +120,11 @@ func (f *matchedFilter) incrementalCrossCorrelation(s *soundSpotter, muxi int) {
 	}
 }
 
-func (f *matchedFilter) sumCrossCorrMatrixDiagonals(shingleSize, dbSize, loK, hiK int) {
+func (f *matchedFilter) sumCrossCorrMatrixDiagonals(shingleSize, dbSize int) {
 	dp := 0
 
 	// Matched Filter length W hop H over N frames
-	for k := loK; k < dbSize-hiK-shingleSize+1; k++ {
+	for k := 0; k < dbSize-shingleSize+1; k++ {
 		// initialize matched filter output k
 		f.DD[k] = f.D[0][k] // DD+k <- q_0 . s_k
 		l := shingleSize - 1
@@ -139,7 +139,7 @@ func (f *matchedFilter) sumCrossCorrMatrixDiagonals(shingleSize, dbSize, loK, hi
 }
 
 func (f *matchedFilter) updateDatabaseNorms(s *soundSpotter) {
-	for k := s.LoK; k < s.getLengthSourceShingles()-s.HiK; k++ {
+	for k := 0; k < s.getLengthSourceShingles(); k++ {
 		sPtr := s.dbShingles[k*s.cqtN:]
 		if sPtr[s.loFeature] > NEGINF {
 			f.sNorm[k] = vectorSumSquares(sPtr[s.loFeature:], s.hiFeature-s.loFeature+1)
@@ -154,9 +154,9 @@ func (f *matchedFilter) updateDatabaseNorms(s *soundSpotter) {
 // a complete input shingle (W feature frames)
 // D (W x N) and DD (1 x N) are already allocated by Matcher constructor
 // D (W x N) is a normed cross-correlation matrix between input features and sources
-func (f *matchedFilter) execute(shingleSize, dbSize, loK, hiK int) {
+func (f *matchedFilter) execute(shingleSize, dbSize int) {
 	// sum diagonals of cross-correlation matrix
-	f.sumCrossCorrMatrixDiagonals(shingleSize, dbSize, loK, hiK)
+	f.sumCrossCorrMatrixDiagonals(shingleSize, dbSize)
 	// Perform query shingle norming
 	seriesSqrt(f.qNorm, idxT(shingleSize), idxT(shingleSize))
 }

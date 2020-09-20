@@ -21,34 +21,24 @@ type soundSpotter struct {
 
 	maxF int // Maximum number of source frames to extract (initial size of database)
 
-	loFeature       int
-	hiFeature       int
-	lastLoFeature   int       // persist feature parameters for database norming
-	lastHiFeature   int       // persist feature parameters for database norming
-	normsNeedUpdate bool      // flag to indicate that database norms are dirty
-	dbBuf           ss_sample // SoundSpotter pointer to PD internal buf
-	bufLen          int64
+	loFeature int
+	hiFeature int
+	dbBuf     ss_sample // SoundSpotter pointer to PD internal buf
+	bufLen    int64
 
 	outputBuffer   ss_sample // Matchers buffer
-	lastAlpha      float64   // envelope follow of previous output
 	hammingWinHalf ss_sample
 
-	shingleSize     int
-	lastShingleSize int
+	shingleSize int
 
-	dbSize     int
-	lastWinner int      // previous winning frame
-	winner     int      // winning frame/shingle in seriesOfVectors match
-	matcher    *matcher // shingle matching algorithm
+	dbSize  int
+	winner  int      // winning frame/shingle in seriesOfVectors match
+	matcher *matcher // shingle matching algorithm
 
 	pwr_abs_thresh float64 // don't match below this threshold
 
-	LoK     int // Database start point marker
-	HiK     int // Database end point marker
-	lastLoK int
-	lastHiK int
-	wc      int
-	cqtN    int // number of constant-Q coefficients (automatic)
+	wc   int
+	cqtN int // number of constant-Q coefficients (automatic)
 }
 
 // multi-channel soundspotter
@@ -56,27 +46,17 @@ type soundSpotter struct {
 func newSoundSpotter(sampleRate, WindowLength, channels int, dbBuf ss_sample, numFrames int64, cqtN int) *soundSpotter {
 
 	s := &soundSpotter{
-		sampleRate:      sampleRate,
-		WindowLength:    WindowLength,
-		channels:        channels,
-		wc:              WindowLength * channels,
-		lastLoFeature:   -1,
-		lastHiFeature:   -1,
-		loFeature:       3,
-		hiFeature:       20,
-		lastShingleSize: -1,
-		shingleSize:     4,
-		lastWinner:      -1,
-		winner:          -1,
-		pwr_abs_thresh:  0.000001,
-		lastLoK:         -1,
-		lastHiK:         -1,
-		dbSize:          0,
-		lastAlpha:       0.0, // crossfade coefficient
-		LoK:             0,
-		HiK:             0,
-		normsNeedUpdate: true,
-		cqtN:            cqtN,
+		sampleRate:     sampleRate,
+		WindowLength:   WindowLength,
+		channels:       channels,
+		wc:             WindowLength * channels,
+		loFeature:      3,
+		hiFeature:      20,
+		shingleSize:    4,
+		winner:         -1,
+		pwr_abs_thresh: 0.000001,
+		dbSize:         0,
+		cqtN:           cqtN,
 	}
 
 	s.maxF = (int)((float32(sampleRate) / float32(WindowLength)) * SS_MAX_DATABASE_SECS)
@@ -84,7 +64,7 @@ func newSoundSpotter(sampleRate, WindowLength, channels int, dbBuf ss_sample, nu
 	s.inShingle = NewSeriesOfVectors(idxT(s.cqtN), idxT(SS_MAX_SHINGLE_SZ))
 	s.inPowers = make(ss_sample, SS_MAX_SHINGLE_SZ)
 
-	s.outputBuffer = make(ss_sample, WindowLength*SS_MAX_SHINGLE_SZ*channels) // fix size at constructor ?
+	s.outputBuffer = make(ss_sample, WindowLength*s.shingleSize*channels) // fix size at constructor ?
 
 	s.dbShingles = make(ss_sample, s.cqtN*s.maxF)
 	s.dbPowers = make(ss_sample, s.maxF)
@@ -134,7 +114,6 @@ func (s *soundSpotter) match() {
 	// calculate powers for detecting silence and balancing output with input
 	seriesMean(s.inPowers, idxT(s.shingleSize), idxT(s.shingleSize))
 	if s.inPowers[0] > s.pwr_abs_thresh {
-		s.lastWinner = s.winner // preserve previous state for cross-fading audio output
 		// matched filter matching to get winning database shingle
 		s.winner = s.matcher.match(s)
 		if s.winner > -1 {
@@ -154,59 +133,20 @@ func (s *soundSpotter) match() {
 					}
 					s.outputBuffer[p] = output
 				}
-				// Cross-fade between current output shingle and one frame past end
-				// of last winning shingle added to beginning of current
-				if s.lastWinner > -1 && s.lastWinner < s.dbSize-s.shingleSize-1 {
-					p := 0
-					for w1 := 0; w1 < s.WindowLength; w1++ {
-						w2 := s.WindowLength - 1 - w1
-						for ; p < s.channels; p++ {
-							output := alpha*s.dbBuf[s.winner*s.wc+p]*s.hammingWinHalf[w1] +
-								s.lastAlpha*s.dbBuf[(s.lastWinner+s.shingleSize)*s.wc+p]*s.hammingWinHalf[w2]
-							if output > 1 {
-								output = 1
-							} else if output < -1 {
-								output = -1
-							}
-							s.outputBuffer[p] = output
-						}
-					}
-				}
 			}
-			s.lastAlpha = alpha
 		}
 	}
 }
 
 func (s *soundSpotter) syncOnShingleStart() {
 
-	s.normsNeedUpdate = s.normsNeedUpdate || !(s.lastLoFeature == s.loFeature &&
-		s.lastHiFeature == s.hiFeature &&
-		s.lastShingleSize == s.shingleSize &&
-		s.lastLoK == s.LoK &&
-		s.lastHiK == s.HiK)
+	// update the power threshold data
+	copy(s.dbPowersCurrent, s.dbPowers)
+	seriesMean(s.dbPowersCurrent, idxT(s.shingleSize), idxT(s.getLengthSourceShingles()))
+	s.matcher.clearFrameQueue()
 
-	// update database statistics based on current search parameters
-	if s.normsNeedUpdate {
-
-		// update the power threshold data
-		if s.shingleSize != s.lastShingleSize {
-			copy(s.dbPowersCurrent, s.dbPowers)
-			seriesMean(s.dbPowersCurrent, idxT(s.shingleSize), idxT(s.getLengthSourceShingles()))
-			s.lastShingleSize = s.shingleSize
-			s.matcher.clearFrameQueue()
-		}
-
-		// update the database norms for new parameters
-		s.matcher.updateDatabaseNorms(s)
-
-		// set the change indicators
-		s.normsNeedUpdate = false
-		s.lastLoFeature = s.loFeature
-		s.lastHiFeature = s.hiFeature
-		s.lastLoK = s.LoK
-		s.lastHiK = s.HiK
-	}
+	// update the database norms for new parameters
+	s.matcher.updateDatabaseNorms(s)
 }
 
 func (s *soundSpotter) zeroBuf(buf ss_sample) {

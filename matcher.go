@@ -54,11 +54,11 @@ func (m *matcher) match(s *soundSpotter) int {
 	minDist := 10.0
 	winner := -1
 	// Perform the recursive Matched Filtering (core match algorithm)
-	m.execute(s.shingleSize, s.dbSize, s.LoK, s.HiK)
+	m.execute(s.shingleSize, s.dbSize)
 	qN0 := m.getQNorm(0) // pre-calculate denominator coefficient
 	// DD now contains (1 x N) multi-dimensional matched filter output
 	oneOverW := 1.0 / float64(s.shingleSize)
-	for k := s.LoK; k < s.dbSize-s.shingleSize-s.HiK+1; k++ {
+	for k := 0; k < s.dbSize-s.shingleSize+1; k++ {
 		// Test frame Queue
 		if m.frameHashTable[int(float64(k)*oneOverW)] == 0 {
 			sk := m.getSNorm(k)

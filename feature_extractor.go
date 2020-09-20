@@ -195,7 +195,6 @@ func (e *featureExtractor) extractSeriesOfVectors(s *soundSpotter) {
 		e.computeMFCC(s.dbShingles[i*s.cqtN:])
 	}
 	s.dbSize = i
-	s.normsNeedUpdate = true
 }
 
 // extract feature vectors from MONO input buffer

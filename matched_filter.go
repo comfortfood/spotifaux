@@ -11,19 +11,9 @@ type matchedFilter struct {
 	DD    []float64   // matched filter result vector
 	qNorm []float64   // query L2 norm vector
 	sNorm []float64   // database L2 norm vector
-
-	maxShingleSize int // largest shingle to allocate
-	maxDBSize      int // largest database to allocate
 }
 
 func (f *matchedFilter) resize(maxShingleSize, maxDBSize int) {
-	if f.maxShingleSize != 0 {
-		f.clearMemory()
-	}
-
-	f.maxShingleSize = maxShingleSize
-	f.maxDBSize = maxDBSize
-
 	// Cross-correlation matrix
 	f.D = make([][]float64, maxShingleSize)
 	for i := 0; i < maxShingleSize; i++ {
@@ -36,47 +26,6 @@ func (f *matchedFilter) resize(maxShingleSize, maxDBSize int) {
 	// Allocate for L2 norm vectors
 	f.qNorm = make([]float64, maxShingleSize) // query is one shingle of length W
 	f.sNorm = make([]float64, maxDBSize)      // source shingles of length W
-}
-func (f *matchedFilter) clearMemory() {
-	if f.D != nil {
-		f.D = nil
-	}
-
-	if f.DD != nil {
-		f.DD = nil
-	}
-
-	if f.qNorm != nil {
-		f.qNorm = nil
-	}
-
-	if f.sNorm != nil {
-		f.sNorm = nil
-	}
-}
-
-func (f *matchedFilter) getQNorm(i int) float64 {
-	if i < f.maxShingleSize {
-		return f.qNorm[i]
-	} else {
-		return 0
-	}
-}
-
-func (f *matchedFilter) getSNorm(i int) float64 {
-	if i < f.maxDBSize {
-		return f.sNorm[i]
-	} else {
-		return 0
-	}
-}
-
-func (f *matchedFilter) getDD(i int) float64 {
-	if i < f.maxDBSize {
-		return f.DD[i]
-	} else {
-		return 0
-	}
 }
 
 // Incremental multidimensional time series insert

@@ -6,10 +6,7 @@ import (
 )
 
 type matcher struct {
-	maxShingleSize int
-	maxDBSize      int
-	frameQueue     list.List
-	frameHashTable []int
+	frameQueue list.List
 	matchedFilter
 	useRelativeThreshold bool
 }
@@ -19,18 +16,7 @@ type matcher struct {
 func (m *matcher) pushFrameQueue() {
 	for m.frameQueue.Len() > 0 {
 		e := m.frameQueue.Front()
-		m.frameHashTable[e.Value.(int)] = 0
 		m.frameQueue.Remove(e)
-	}
-}
-
-func (m *matcher) clearFrameQueue() {
-	m.frameQueue.Init()
-	p := 0
-	mx := m.maxDBSize
-	for ; mx > 0; mx-- {
-		m.frameHashTable[p] = 0
-		p++
 	}
 }
 
@@ -55,43 +41,29 @@ func (m *matcher) match(s *soundSpotter) int {
 	winner := -1
 	// Perform the recursive Matched Filtering (core match algorithm)
 	m.execute(s.shingleSize, s.dbSize)
-	qN0 := m.getQNorm(0) // pre-calculate denominator coefficient
+	qN0 := m.qNorm[0] // pre-calculate denominator coefficient
 	// DD now contains (1 x N) multi-dimensional matched filter output
-	oneOverW := 1.0 / float64(s.shingleSize)
 	for k := 0; k < s.dbSize-s.shingleSize+1; k++ {
-		// Test frame Queue
-		if m.frameHashTable[int(float64(k)*oneOverW)] == 0 {
-			sk := m.getSNorm(k)
-			pk := s.dbPowersCurrent[k]
-			if !math.IsNaN(pk) && !(sk == NEGINF) && pk > s.pwr_abs_thresh &&
-				(!m.useRelativeThreshold || inPwMn/pk < pwr_rel_thresh) {
-				// The norm matched filter distance  is the Euclidean distance between the vectors
-				dist = 2 - 2/(qN0*sk)*m.getDD(k) // squared Euclidean distance
-				dRadius = math.Abs(dist)         // Distance from search radius
-				// Perform min-dist search
-				if dRadius < minD { // prefer matches at front
-					minD = dRadius
-					minDist = dist
-					winner = k
-				}
+		sk := m.sNorm[k]
+		pk := s.dbPowersCurrent[k]
+		if !math.IsNaN(pk) && !(sk == NEGINF) && pk > s.pwr_abs_thresh &&
+			(!m.useRelativeThreshold || inPwMn/pk < pwr_rel_thresh) {
+			// The norm matched filter distance  is the Euclidean distance between the vectors
+			dist = 2 - 2/(qN0*sk)*m.DD[k] // squared Euclidean distance
+			dRadius = math.Abs(dist)      // Distance from search radius
+			// Perform min-dist search
+			if dRadius < minD { // prefer matches at front
+				minD = dRadius
+				minDist = dist
+				winner = k
 			}
 		}
-	}
-	// New size is smaller
-	// Reset frames beyond queueSize
-	sz := m.frameQueue.Len()
-	e := m.frameQueue.Back()
-	for k := 0; k < sz; k++ {
-		kVal := e.Value.(int)
-		e = e.Prev()
-		m.frameHashTable[kVal] = 0
 	}
 	// FIX ME: the frame queue hash table logic is a bit off when queue sizes (or window sizes) change
 	if winner > -1 {
 		m.pushFrameQueue() // Hash down frame to hop boundary and queue
 	} else if m.frameQueue.Len() > 0 {
 		e := m.frameQueue.Front()
-		m.frameHashTable[e.Value.(int)] = 0
 		m.frameQueue.Remove(e)
 	}
 	dist = minDist

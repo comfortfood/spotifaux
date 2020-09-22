@@ -67,9 +67,6 @@ func main() {
 			inputSamps[nn] = inputSrc.Float64() //(nn%512)/512.0f;
 			outputFeatures[nn] = 0.0
 		}
-		if s.dbSize == 0 || s.bufLen == 0 {
-			break
-		}
 
 		if muxi == 0 {
 			s.syncOnShingleStart() // update parameters at shingleStart
@@ -82,7 +79,7 @@ func main() {
 		// insert shingles into Matcher
 		s.matcher.insert(s, muxi)
 		// Do the matching at shingle end
-		if muxi == (s.shingleSize - 1) {
+		if muxi == s.shingleSize-1 {
 			s.match()
 			if s.winner != -1 || foundWinner {
 				foundWinner = true

@@ -36,7 +36,6 @@ type soundSpotter struct {
 
 	pwr_abs_thresh float64 // don't match below this threshold
 
-	wc   int
 	cqtN int // number of constant-Q coefficients (automatic)
 }
 
@@ -48,7 +47,6 @@ func newSoundSpotter(sampleRate, WindowLength, channels int, dbBuf []float64, nu
 		sampleRate:     sampleRate,
 		WindowLength:   WindowLength,
 		channels:       channels,
-		wc:             WindowLength * channels,
 		loFeature:      3,
 		hiFeature:      20,
 		shingleSize:    4,
@@ -74,26 +72,19 @@ func newSoundSpotter(sampleRate, WindowLength, channels int, dbBuf []float64, nu
 	}
 	s.dbPowers = make([]float64, s.maxF)
 	s.dbPowersCurrent = make([]float64, s.maxF)
-	s.matcher = &matcher{
-		maxShingleSize: s.shingleSize,
-		maxDBSize:      s.maxF,
-		frameHashTable: make([]int, s.maxF),
-	}
-	s.matcher.resize(s.matcher.maxShingleSize, s.matcher.maxDBSize)
+	s.matcher = &matcher{}
+	s.matcher.resize(s.shingleSize, s.maxF)
 
 	s.channels = channels
 	s.dbBuf = dbBuf
 	s.bufLen = numFrames * int64(channels)
-	if numFrames > int64(s.maxF)*int64(s.wc) {
-		s.bufLen = int64(s.maxF) * int64(s.wc)
-	}
-	s.matcher.clearFrameQueue()
+	s.matcher.frameQueue.Init()
 
 	return s
 }
 
 func (s *soundSpotter) getLengthSourceShingles() int {
-	return int(math.Ceil(float64(s.bufLen) / (float64(s.wc))))
+	return int(math.Ceil(float64(s.bufLen) / (float64(s.WindowLength * s.channels))))
 }
 
 // This half hamming window is used for cross fading output buffers
@@ -119,16 +110,14 @@ func (s *soundSpotter) match() {
 			envFollow := 0.5
 			alpha := envFollow*math.Sqrt(s.inPowers[0]/s.dbPowers[s.winner]) + (1 - envFollow)
 			if s.winner > -1 {
-				// Copy winning samples to output buffer, these could be further processed
-				// MULTI-CHANNEL OUTPUT
-				for p := 0; p < s.shingleSize*s.wc; p++ {
-					output := alpha * s.dbBuf[s.winner*s.wc+p]
-					if output > 1 {
-						output = 1
-					} else if output < -1 {
-						output = -1
+				for p := 0; p < s.shingleSize*s.WindowLength*s.channels; p++ {
+					output := alpha * s.dbBuf[s.winner*s.WindowLength*s.channels+p]
+					if output > 1.12 {
+						output = 1.12
+					} else if output < -1.12 {
+						output = -1.12
 					}
-					s.outputBuffer[p] = output
+					s.outputBuffer[p] = output * 0.8
 				}
 			}
 		}
@@ -138,7 +127,7 @@ func (s *soundSpotter) match() {
 func (s *soundSpotter) syncOnShingleStart() {
 
 	// update the power threshold data
-	s.matcher.clearFrameQueue()
+	s.matcher.frameQueue.Init()
 
 	// update the database norms for new parameters
 	s.matcher.updateDatabaseNorms(s)

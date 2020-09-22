@@ -6,28 +6,27 @@ import (
 )
 
 const SS_MAX_DATABASE_SECS = 7200
-const SS_MAX_SHINGLE_SZ = 32
 const SS_FFT_LENGTH = 4096
 
 type soundSpotter struct {
 	sampleRate      int
 	WindowLength    int
 	channels        int
-	dbShingles      ss_sample
-	inShingle       *seriesOfVectors
-	dbPowers        ss_sample
-	dbPowersCurrent ss_sample
-	inPowers        ss_sample
+	dbShingles      [][]float64
+	inShingles      [][]float64
+	dbPowers        []float64
+	dbPowersCurrent []float64
+	inPowers        []float64
 
 	maxF int // Maximum number of source frames to extract (initial size of database)
 
 	loFeature int
 	hiFeature int
-	dbBuf     ss_sample // SoundSpotter pointer to PD internal buf
+	dbBuf     []float64 // SoundSpotter pointer to PD internal buf
 	bufLen    int64
 
-	outputBuffer   ss_sample // Matchers buffer
-	hammingWinHalf ss_sample
+	outputBuffer   []float64 // Matchers buffer
+	hammingWinHalf []float64
 
 	shingleSize int
 
@@ -43,7 +42,7 @@ type soundSpotter struct {
 
 // multi-channel soundspotter
 // expects MONO input and possibly multi-channel DATABASE audio output
-func newSoundSpotter(sampleRate, WindowLength, channels int, dbBuf ss_sample, numFrames int64, cqtN int) *soundSpotter {
+func newSoundSpotter(sampleRate, WindowLength, channels int, dbBuf []float64, numFrames int64, cqtN int) *soundSpotter {
 
 	s := &soundSpotter{
 		sampleRate:     sampleRate,
@@ -61,28 +60,26 @@ func newSoundSpotter(sampleRate, WindowLength, channels int, dbBuf ss_sample, nu
 
 	s.maxF = (int)((float32(sampleRate) / float32(WindowLength)) * SS_MAX_DATABASE_SECS)
 	s.makeHammingWin2()
-	s.inShingle = NewSeriesOfVectors(idxT(s.cqtN), idxT(SS_MAX_SHINGLE_SZ))
-	s.inPowers = make(ss_sample, SS_MAX_SHINGLE_SZ)
+	s.inShingles = make([][]float64, s.shingleSize)
+	for i := 0; i < s.shingleSize; i++ {
+		s.inShingles[i] = make([]float64, s.cqtN)
+	}
+	s.inPowers = make([]float64, s.shingleSize+1)
 
-	s.outputBuffer = make(ss_sample, WindowLength*s.shingleSize*channels) // fix size at constructor ?
+	s.outputBuffer = make([]float64, WindowLength*s.shingleSize*channels) // fix size at constructor ?
 
-	s.dbShingles = make(ss_sample, s.cqtN*s.maxF)
-	s.dbPowers = make(ss_sample, s.maxF)
-	s.dbPowersCurrent = make(ss_sample, s.maxF)
+	s.dbShingles = make([][]float64, s.maxF)
+	for i := 0; i < s.maxF; i++ {
+		s.dbShingles[i] = make([]float64, s.cqtN)
+	}
+	s.dbPowers = make([]float64, s.maxF)
+	s.dbPowersCurrent = make([]float64, s.maxF)
 	s.matcher = &matcher{
-		maxShingleSize: SS_MAX_SHINGLE_SZ,
+		maxShingleSize: s.shingleSize,
 		maxDBSize:      s.maxF,
 		frameHashTable: make([]int, s.maxF),
 	}
 	s.matcher.resize(s.matcher.maxShingleSize, s.matcher.maxDBSize)
-
-	if s.inShingle != nil && s.dbShingles != nil {
-		s.zeroBuf(s.dbShingles)
-		s.zeroBuf(s.inShingle.series)
-		s.zeroBuf(s.inPowers)
-		s.zeroBuf(s.dbPowers)
-	}
-	s.zeroBuf(s.outputBuffer)
 
 	s.channels = channels
 	s.dbBuf = dbBuf
@@ -101,7 +98,7 @@ func (s *soundSpotter) getLengthSourceShingles() int {
 
 // This half hamming window is used for cross fading output buffers
 func (s *soundSpotter) makeHammingWin2() {
-	s.hammingWinHalf = make(ss_sample, s.WindowLength)
+	s.hammingWinHalf = make([]float64, s.WindowLength)
 	for k := 0; k < s.WindowLength; k++ {
 		s.hammingWinHalf[k] = 0.54 - 0.46*math.Cos(2*math.Pi*float64(k)/float64(s.WindowLength*2-1))
 	}
@@ -112,7 +109,7 @@ func (s *soundSpotter) match() {
 	// zero output buffer in case we don't match anything
 	s.zeroBuf(s.outputBuffer)
 	// calculate powers for detecting silence and balancing output with input
-	seriesMean(s.inPowers, idxT(s.shingleSize), idxT(s.shingleSize))
+	seriesMean(s.inPowers, s.shingleSize, s.shingleSize)
 	if s.inPowers[0] > s.pwr_abs_thresh {
 		// matched filter matching to get winning database shingle
 		s.winner = s.matcher.match(s)
@@ -141,15 +138,13 @@ func (s *soundSpotter) match() {
 func (s *soundSpotter) syncOnShingleStart() {
 
 	// update the power threshold data
-	copy(s.dbPowersCurrent, s.dbPowers)
-	seriesMean(s.dbPowersCurrent, idxT(s.shingleSize), idxT(s.getLengthSourceShingles()))
 	s.matcher.clearFrameQueue()
 
 	// update the database norms for new parameters
 	s.matcher.updateDatabaseNorms(s)
 }
 
-func (s *soundSpotter) zeroBuf(buf ss_sample) {
+func (s *soundSpotter) zeroBuf(buf []float64) {
 	for i := 0; i < len(buf); i++ {
 		buf[i] = 0.0
 	}

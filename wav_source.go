@@ -1,8 +1,8 @@
 package main
 
 type wavSource struct {
-	audioDatabaseBuf ss_sample
-	i                int
+	dbBuf []float64
+	i     int
 }
 
 func newWavSource() *wavSource {
@@ -18,17 +18,20 @@ func newWavSource() *wavSource {
 		panic(err)
 	}
 
-	e := newFeatureExtractor(44100, WindowLength, SS_FFT_LENGTH)
+	fftN := SS_FFT_LENGTH // linear frequency resolution (FFT) (user)
+	fftOutN := fftN/2 + 1 // linear frequency power spectrum values (automatic)
+
+	e := newFeatureExtractor(44100, WindowLength, fftN, fftOutN)
 
 	newSoundSpotter(44100, WindowLength, sf.channels, dbBuf, sf.frames, e.cqtN)
 
-	return &wavSource{audioDatabaseBuf: dbBuf}
+	return &wavSource{dbBuf: dbBuf}
 }
 
 func (s *wavSource) Float64() float64 {
 	i := s.i
 	s.i += 1
-	return s.audioDatabaseBuf[i]
+	return s.dbBuf[i]
 }
 
 func (s *wavSource) Close() error {

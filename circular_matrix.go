@@ -5,21 +5,7 @@ import (
 	"math"
 )
 
-type idxT C.ulonglong
-
-type seriesOfVectors struct {
-	series  ss_sample // sample type
-	rows    idxT      // Length of feature vectors
-	columns idxT      // Length of vector series
-}
-
-func NewSeriesOfVectors(rows idxT, columns idxT) *seriesOfVectors {
-	return &seriesOfVectors{series: make(ss_sample, rows*columns), rows: rows, columns: columns}
-}
-
-func (s *seriesOfVectors) getCol(column idxT) ss_sample { return s.series[column*s.rows:] }
-
-func vectorSumSquares(vec ss_sample, len int) float64 {
+func vectorSumSquares(vec []float64, len int) float64 {
 	sum := 0.0
 	for i := 0; i < len; i++ {
 		v1 := vec[i]
@@ -28,33 +14,35 @@ func vectorSumSquares(vec ss_sample, len int) float64 {
 	return sum
 }
 
-func seriesSqrt(v []float64, seqlen, sz idxT) {
+func seriesSqrt(v []float64, seqlen, sz int) {
 	seriesSum(v, seqlen, sz)
 	for i := 0; i < int(sz-seqlen+1); i++ {
 		v[i] = math.Sqrt(v[i])
 	}
 }
 
-func seriesMean(v []float64, seqlen, sz idxT) {
+func seriesMean(v []float64, seqlen, sz int) {
 	seriesSum(v, seqlen, sz)
-	for i := 0; i < int(sz-seqlen+1); i++ {
+	for i := 0; i < sz-seqlen+1; i++ {
 		v[i] /= float64(seqlen)
 	}
 }
 
-func seriesSum(v []float64, seqlen, sz idxT) {
+func seriesSum(v []float64, seqlen, sz int) {
 
 	movingSum := 0.0
-	for spd := 0; idxT(spd) < seqlen; spd++ {
+	for spd := 0; spd < seqlen; spd++ {
 		movingSum += v[spd]
 	}
 
-	for sp := 0; sp < int(sz-seqlen+1); sp++ {
+	for sp := 0; sp < sz-seqlen+1; sp++ {
 		first := v[sp]
-		last := v[idxT(sp)+seqlen]
 
 		v[sp] = movingSum
 
-		movingSum = movingSum - first + last
+		if sp+seqlen < len(v) {
+			last := v[sp+seqlen]
+			movingSum = movingSum - first + last
+		}
 	}
 }

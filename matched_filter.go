@@ -10,7 +10,7 @@ type matchedFilter struct {
 	D     [][]float64 // cross-correlation matrix
 	DD    []float64   // matched filter result vector
 	qNorm []float64   // query L2 norm vector
-	sNorm ss_sample   // database L2 norm vector
+	sNorm []float64   // database L2 norm vector
 
 	maxShingleSize int // largest shingle to allocate
 	maxDBSize      int // largest database to allocate
@@ -87,36 +87,21 @@ func (f *matchedFilter) insert(s *soundSpotter, muxi int) {
 
 	// Keep input L2 norms for correct shingle norming at distance computation stage
 	qPtr := s.loFeature
-	if s.inShingle.getCol(idxT(muxi))[qPtr] > NEGINF {
-		f.qNorm[muxi] = vectorSumSquares(s.inShingle.getCol(idxT(muxi))[qPtr:], s.hiFeature-s.loFeature+1)
+	if s.inShingles[muxi][qPtr] > NEGINF {
+		f.qNorm[muxi] = vectorSumSquares(s.inShingles[muxi][qPtr:], s.hiFeature-s.loFeature+1)
 	} else {
 		f.qNorm[muxi] = 0.0
 	}
 }
 
 func (f *matchedFilter) incrementalCrossCorrelation(s *soundSpotter, muxi int) {
-
-	ioff := (idxT(muxi) * s.inShingle.rows) + idxT(s.loFeature)
-	doff := (idxT(muxi) * s.inShingle.rows) + idxT(s.loFeature)
-	isp := s.inShingle.series[ioff:]
-	dsp := s.dbShingles
-	totalLen := s.dbSize - s.shingleSize + 1
-	dim := s.hiFeature - s.loFeature + 1
-	dpp := muxi
 	// Make Correlation matrix entry for this frame against entire source database
-	for ; totalLen > 0; totalLen-- {
-		qp := 0    // input column pointer
-		sp := doff // db column pointer
-		doff += s.inShingle.rows
-		// point to correlation cell j,k
-		f.D[muxi][dpp] = 0.0 // initialize correlation cell
-		l := dim             // Size of bounded feature vector
-		for ; l > 0; l-- {
-			f.D[muxi][dpp] += isp[qp] * dsp[sp]
-			qp++
-			sp++
+	for dpp := 0; dpp < s.dbSize-s.shingleSize+1; dpp++ {
+		coor := 0.0 // initialize correlation cell
+		for qp := 0; qp < s.hiFeature-s.loFeature+1; qp++ {
+			coor += s.inShingles[muxi][s.loFeature+qp] * s.dbShingles[muxi+dpp][s.loFeature+qp]
 		}
-		dpp++
+		f.D[muxi][muxi+dpp] = coor
 	}
 }
 
@@ -140,14 +125,14 @@ func (f *matchedFilter) sumCrossCorrMatrixDiagonals(shingleSize, dbSize int) {
 
 func (f *matchedFilter) updateDatabaseNorms(s *soundSpotter) {
 	for k := 0; k < s.getLengthSourceShingles(); k++ {
-		sPtr := s.dbShingles[k*s.cqtN:]
+		sPtr := s.dbShingles[k]
 		if sPtr[s.loFeature] > NEGINF {
 			f.sNorm[k] = vectorSumSquares(sPtr[s.loFeature:], s.hiFeature-s.loFeature+1)
 		} else {
 			f.sNorm[k] = 0.0
 		}
 	}
-	seriesSqrt(f.sNorm, idxT(s.shingleSize), idxT(s.getLengthSourceShingles()))
+	seriesSqrt(f.sNorm, s.shingleSize, s.getLengthSourceShingles())
 }
 
 // PRE-CONDITIONS:
@@ -158,5 +143,5 @@ func (f *matchedFilter) execute(shingleSize, dbSize int) {
 	// sum diagonals of cross-correlation matrix
 	f.sumCrossCorrMatrixDiagonals(shingleSize, dbSize)
 	// Perform query shingle norming
-	seriesSqrt(f.qNorm, idxT(shingleSize), idxT(shingleSize))
+	seriesSqrt(f.qNorm, shingleSize, shingleSize)
 }

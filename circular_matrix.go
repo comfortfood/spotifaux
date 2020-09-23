@@ -16,14 +16,14 @@ func VectorSumSquares(vec []float64, len int) float64 {
 
 func SeriesSqrt(v []float64, seqlen int) {
 	SeriesSum(v, seqlen)
-	for i := 0; i < len(v)-seqlen+1; i++ {
+	for i := 0; i < len(v); i++ {
 		v[i] = math.Sqrt(v[i])
 	}
 }
 
 func SeriesMean(v []float64, seqlen int) {
 	SeriesSum(v, seqlen)
-	for i := 0; i < len(v)-seqlen+1; i++ {
+	for i := 0; i < len(v); i++ {
 		v[i] /= float64(seqlen)
 	}
 }
@@ -35,13 +35,15 @@ func SeriesSum(v []float64, seqlen int) {
 		movingSum += v[spd]
 	}
 
-	for sp := 0; sp < len(v)-seqlen; sp++ {
+	for sp := 0; sp < len(v); sp++ {
 		first := v[sp]
-		last := v[sp+seqlen]
+		last := 0.0
+		if sp+seqlen < len(v) {
+			last = v[sp+seqlen]
+		}
 
 		v[sp] = movingSum
 
 		movingSum = movingSum - first + last
 	}
-	v[len(v)-seqlen] = movingSum
 }

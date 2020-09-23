@@ -9,5 +9,5 @@ import (
 func Test_seriesSum(t *testing.T) {
 	v := []float64{1, 2, 3, 4, 5}
 	spotifaux.SeriesSum(v, 4)
-	assert.Equal(t, v, []float64{10, 14, 3, 4, 5})
+	assert.Equal(t, v, []float64{10, 14, 12, 9, 5})
 }

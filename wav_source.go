@@ -1,18 +1,18 @@
-package main
+package spotifaux
 
 type wavSource struct {
 	dbBuf []float64
 	i     int
 }
 
-func newWavSource() *wavSource {
-	sf, err := newSoundFile("/Users/wyatttall/git/spotifaux/Madonna.wav")
+func NewWavSource() *wavSource {
+	sf, err := NewSoundFile("/Users/wyatttall/git/spotifaux/recreate/bell-16kHz.wav")
 	if err != nil {
 		panic(err)
 	}
 	defer sf.Close()
 
-	dbBuf := make([]float64, sf.frames*int64(sf.channels))
+	dbBuf := make([]float64, sf.Frames*int64(sf.Channels))
 	_, err = sf.ReadFrames(dbBuf)
 	if err != nil {
 		panic(err)
@@ -21,9 +21,9 @@ func newWavSource() *wavSource {
 	fftN := SS_FFT_LENGTH // linear frequency resolution (FFT) (user)
 	fftOutN := fftN/2 + 1 // linear frequency power spectrum values (automatic)
 
-	e := newFeatureExtractor(44100, WindowLength, fftN, fftOutN)
+	e := NewFeatureExtractor(SAMPLE_RATE, fftN, fftOutN)
 
-	newSoundSpotter(44100, WindowLength, sf.channels, dbBuf, sf.frames, e.cqtN)
+	NewSoundSpotter(SAMPLE_RATE, sf.Channels, dbBuf, sf.Frames, e.CqtN)
 
 	return &wavSource{dbBuf: dbBuf}
 }

@@ -1,4 +1,4 @@
-package main
+package spotifaux
 
 import (
 	"github.com/mkb218/gosndfile/sndfile"
@@ -12,7 +12,7 @@ func NewWavWriter(filename string) *wavWriter {
 	var i sndfile.Info
 	i.Format = sndfile.SF_FORMAT_WAV | sndfile.SF_FORMAT_PCM_16
 	i.Channels = 1
-	i.Samplerate = 44100
+	i.Samplerate = SAMPLE_RATE
 	f, err := sndfile.Open(filename, sndfile.Write, &i)
 	if err != nil {
 		panic(err)

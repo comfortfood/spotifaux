@@ -1,4 +1,4 @@
-package main
+package spotifaux
 
 import (
 	"container/list"
@@ -8,7 +8,6 @@ import (
 type matcher struct {
 	frameQueue list.List
 	matchedFilter
-	useRelativeThreshold bool
 }
 
 // Push a frame onto the frameQueue
@@ -32,22 +31,19 @@ func (m *matcher) pushFrameQueue() {
 // Factored out dependency on SoundSpotter class, August 8th - 9th 2009
 // Added power features for threshold tests
 func (m *matcher) match(s *soundSpotter) int {
-	inPwMn := s.inPowers[0]
-	pwr_rel_thresh := 0.1
 	dist := 0.0
 	minD := 1e6
 	dRadius := 0.0
 	minDist := 10.0
 	winner := -1
 	// Perform the recursive Matched Filtering (core match algorithm)
-	m.execute(s.shingleSize, s.dbSize)
+	m.execute(s.ShingleSize, s.dbSize)
 	qN0 := m.qNorm[0] // pre-calculate denominator coefficient
 	// DD now contains (1 x N) multi-dimensional matched filter output
-	for k := 0; k < s.dbSize-s.shingleSize+1; k++ {
+	for k := 0; k < s.dbSize-s.ShingleSize+1; k++ {
 		sk := m.sNorm[k]
 		pk := s.dbPowersCurrent[k]
-		if !math.IsNaN(pk) && !(sk == NEGINF) && pk > s.pwr_abs_thresh &&
-			(!m.useRelativeThreshold || inPwMn/pk < pwr_rel_thresh) {
+		if !math.IsNaN(pk) && !(sk == NEGINF) && pk > s.pwr_abs_thresh {
 			// The norm matched filter distance  is the Euclidean distance between the vectors
 			dist = 2 - 2/(qN0*sk)*m.DD[k] // squared Euclidean distance
 			dRadius = math.Abs(dist)      // Distance from search radius

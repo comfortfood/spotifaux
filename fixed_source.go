@@ -1,4 +1,4 @@
-package main
+package spotifaux
 
 import (
 	"bufio"
@@ -6,7 +6,7 @@ import (
 	"strconv"
 )
 
-type source interface {
+type Source interface {
 	Float64() float64
 	Close() error
 }

@@ -1,22 +1,22 @@
-package main
+package spotifaux
 
 import (
 	"errors"
 	"github.com/mkb218/gosndfile/sndfile"
 )
 
-const SF_MAX_NUM_FRAMES = 7200 * 44100
+const SF_MAX_NUM_FRAMES = SS_MAX_DATABASE_SECS * SAMPLE_RATE
 
 type soundFile struct {
-	channels int
+	Channels int
 	file     *sndfile.File
-	frames   int64
+	Frames   int64
 }
 
 // Attempt to open sound file
 // return -1 if cannot open soundFile
 // else return number of frames read
-func newSoundFile(fileName string) (*soundFile, error) {
+func NewSoundFile(fileName string) (*soundFile, error) {
 	sf := &soundFile{}
 
 	// Open sound file
@@ -30,10 +30,10 @@ func newSoundFile(fileName string) (*soundFile, error) {
 	if !sndfile.FormatCheck(*info) {
 		panic(errors.New("bad format"))
 	}
-	sf.channels = int(info.Channels)
-	sf.frames = info.Frames
-	if sf.frames > SF_MAX_NUM_FRAMES {
-		sf.frames = SF_MAX_NUM_FRAMES
+	sf.Channels = int(info.Channels)
+	sf.Frames = info.Frames
+	if sf.Frames > SF_MAX_NUM_FRAMES {
+		sf.Frames = SF_MAX_NUM_FRAMES
 	}
 	return sf, nil
 }

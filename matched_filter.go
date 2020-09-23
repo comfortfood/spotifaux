@@ -1,4 +1,4 @@
-package main
+package spotifaux
 
 import (
 	"math"
@@ -29,15 +29,15 @@ func (f *matchedFilter) resize(maxShingleSize, maxDBSize int) {
 }
 
 // Incremental multidimensional time series insert
-func (f *matchedFilter) insert(s *soundSpotter, muxi int) {
+func (f *matchedFilter) Insert(s *soundSpotter, muxi int) {
 
 	// incrementally compute cross correlation matrix
 	f.incrementalCrossCorrelation(s, muxi)
 
 	// Keep input L2 norms for correct shingle norming at distance computation stage
 	qPtr := s.loFeature
-	if s.inShingles[muxi][qPtr] > NEGINF {
-		f.qNorm[muxi] = vectorSumSquares(s.inShingles[muxi][qPtr:], s.hiFeature-s.loFeature+1)
+	if s.InShingles[muxi][qPtr] > NEGINF {
+		f.qNorm[muxi] = VectorSumSquares(s.InShingles[muxi][qPtr:], s.hiFeature-s.loFeature+1)
 	} else {
 		f.qNorm[muxi] = 0.0
 	}
@@ -45,10 +45,10 @@ func (f *matchedFilter) insert(s *soundSpotter, muxi int) {
 
 func (f *matchedFilter) incrementalCrossCorrelation(s *soundSpotter, muxi int) {
 	// Make Correlation matrix entry for this frame against entire source database
-	for dpp := 0; dpp < s.dbSize-s.shingleSize+1; dpp++ {
+	for dpp := 0; dpp < s.dbSize-s.ShingleSize+1; dpp++ {
 		coor := 0.0 // initialize correlation cell
 		for qp := 0; qp < s.hiFeature-s.loFeature+1; qp++ {
-			coor += s.inShingles[muxi][s.loFeature+qp] * s.dbShingles[muxi+dpp][s.loFeature+qp]
+			coor += s.InShingles[muxi][s.loFeature+qp] * s.dbShingles[muxi+dpp][s.loFeature+qp]
 		}
 		f.D[muxi][muxi+dpp] = coor
 	}
@@ -76,12 +76,12 @@ func (f *matchedFilter) updateDatabaseNorms(s *soundSpotter) {
 	for k := 0; k < s.getLengthSourceShingles(); k++ {
 		sPtr := s.dbShingles[k]
 		if sPtr[s.loFeature] > NEGINF {
-			f.sNorm[k] = vectorSumSquares(sPtr[s.loFeature:], s.hiFeature-s.loFeature+1)
+			f.sNorm[k] = VectorSumSquares(sPtr[s.loFeature:], s.hiFeature-s.loFeature+1)
 		} else {
 			f.sNorm[k] = 0.0
 		}
 	}
-	seriesSqrt(f.sNorm, s.shingleSize, s.getLengthSourceShingles())
+	SeriesSqrt(f.sNorm, s.ShingleSize)
 }
 
 // PRE-CONDITIONS:
@@ -92,5 +92,5 @@ func (f *matchedFilter) execute(shingleSize, dbSize int) {
 	// sum diagonals of cross-correlation matrix
 	f.sumCrossCorrMatrixDiagonals(shingleSize, dbSize)
 	// Perform query shingle norming
-	seriesSqrt(f.qNorm, shingleSize, shingleSize)
+	SeriesSqrt(f.qNorm, shingleSize)
 }

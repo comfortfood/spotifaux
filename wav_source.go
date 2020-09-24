@@ -12,7 +12,7 @@ func NewWavSource() *wavSource {
 	}
 	defer sf.Close()
 
-	dbBuf := make([]float64, sf.Frames*int64(sf.Channels))
+	dbBuf := make([]float64, sf.Frames)
 	_, err = sf.ReadFrames(dbBuf)
 	if err != nil {
 		panic(err)
@@ -23,7 +23,7 @@ func NewWavSource() *wavSource {
 
 	e := NewFeatureExtractor(SAMPLE_RATE, fftN, fftOutN)
 
-	NewSoundSpotter(SAMPLE_RATE, sf.Channels, dbBuf, sf.Frames, e.CqtN)
+	NewSoundSpotter(SAMPLE_RATE, dbBuf, sf.Frames, e.CqtN)
 
 	return &wavSource{dbBuf: dbBuf}
 }

@@ -8,25 +8,22 @@ import (
 const SS_MAX_DATABASE_SECS = 7200
 const SS_FFT_LENGTH = 800
 const WindowLength = 400
+const Hop = 400
 const SAMPLE_RATE = 16000
 
 type soundSpotter struct {
-	sampleRate      int
-	channels        int
-	dbShingles      [][]float64
-	InShingles      [][]float64
-	dbPowers        []float64
-	dbPowersCurrent []float64
-	InPowers        []float64
+	sampleRate int
+	dbShingles [][]float64
+	InShingles [][]float64
+	dbPowers   []float64
+	InPowers   []float64
 
 	maxF int // Maximum number of source frames to extract (initial size of database)
 
-	loFeature int
-	hiFeature int
-	dbBuf     []float64 // SoundSpotter pointer to PD internal buf
-	bufLen    int64
-
-	hammingWinHalf []float64
+	loFeature            int
+	hiFeature            int
+	dbBuf                []float64 // SoundSpotter pointer to PD internal buf
+	lengthSourceShingles int
 
 	ShingleSize int
 
@@ -41,11 +38,10 @@ type soundSpotter struct {
 
 // multi-channel soundspotter
 // expects MONO input and possibly multi-channel DATABASE audio output
-func NewSoundSpotter(sampleRate, channels int, dbBuf []float64, numFrames int64, cqtN int) *soundSpotter {
+func NewSoundSpotter(sampleRate int, dbBuf []float64, numFrames int64, cqtN int) *soundSpotter {
 
 	s := &soundSpotter{
 		sampleRate:     sampleRate,
-		channels:       channels,
 		loFeature:      3,
 		hiFeature:      20,
 		ShingleSize:    4,
@@ -56,7 +52,6 @@ func NewSoundSpotter(sampleRate, channels int, dbBuf []float64, numFrames int64,
 	}
 
 	s.maxF = (int)((float32(sampleRate) / float32(WindowLength)) * SS_MAX_DATABASE_SECS)
-	s.makeHammingWin2()
 	s.InShingles = make([][]float64, s.ShingleSize)
 	for i := 0; i < s.ShingleSize; i++ {
 		s.InShingles[i] = make([]float64, s.CqtN)
@@ -68,33 +63,20 @@ func NewSoundSpotter(sampleRate, channels int, dbBuf []float64, numFrames int64,
 		s.dbShingles[i] = make([]float64, s.CqtN)
 	}
 	s.dbPowers = make([]float64, s.maxF)
-	s.dbPowersCurrent = make([]float64, s.maxF)
 	s.Matcher = &matcher{}
 	s.Matcher.resize(s.ShingleSize, s.maxF)
 
-	s.channels = channels
 	s.dbBuf = dbBuf
-	s.bufLen = numFrames * int64(channels)
+	s.lengthSourceShingles = int(math.Ceil(float64(numFrames) / (float64(Hop))))
 	s.Matcher.frameQueue.Init()
 
 	return s
 }
 
-func (s *soundSpotter) getLengthSourceShingles() int {
-	return int(math.Ceil(float64(s.bufLen) / (float64(WindowLength * s.channels))))
-}
-
-// This half hamming window is used for cross fading output buffers
-func (s *soundSpotter) makeHammingWin2() {
-	s.hammingWinHalf = make([]float64, WindowLength)
-	for k := 0; k < WindowLength; k++ {
-		s.hammingWinHalf[k] = 0.54 - 0.46*math.Cos(2*math.Pi*float64(k)/float64(WindowLength*2-1))
-	}
-}
-
 // Perform matching on shingle boundary
 func (s *soundSpotter) Match() []float64 {
-	outputBuffer := make([]float64, WindowLength*s.ShingleSize*s.channels) // fix size at constructor ?
+	outputLength := Hop*(s.ShingleSize-1) + WindowLength
+	outputBuffer := make([]float64, outputLength) // fix size at constructor ?
 	// calculate powers for detecting silence and balancing output with input
 	SeriesMean(s.InPowers, s.ShingleSize)
 	if s.InPowers[0] > s.pwr_abs_thresh {
@@ -106,8 +88,8 @@ func (s *soundSpotter) Match() []float64 {
 			envFollow := 0.5
 			alpha := envFollow*math.Sqrt(s.InPowers[0]/s.dbPowers[s.Winner]) + (1 - envFollow)
 			if s.Winner > -1 {
-				for p := 0; p < s.ShingleSize*WindowLength*s.channels; p++ {
-					output := alpha * s.dbBuf[s.Winner*WindowLength*s.channels+p]
+				for p := 0; p < outputLength && s.Winner*Hop+p < len(s.dbBuf); p++ {
+					output := alpha * s.dbBuf[s.Winner*Hop+p]
 					if output > 1.12 {
 						output = 1.12
 					} else if output < -1.12 {
@@ -128,10 +110,4 @@ func (s *soundSpotter) SyncOnShingleStart() {
 
 	// update the database norms for new parameters
 	s.Matcher.updateDatabaseNorms(s)
-}
-
-func (s *soundSpotter) zeroBuf(buf []float64) {
-	for i := 0; i < len(buf); i++ {
-		buf[i] = 0.0
-	}
 }

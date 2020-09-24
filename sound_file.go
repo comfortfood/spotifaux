@@ -8,9 +8,8 @@ import (
 const SF_MAX_NUM_FRAMES = SS_MAX_DATABASE_SECS * SAMPLE_RATE
 
 type soundFile struct {
-	Channels int
-	file     *sndfile.File
-	Frames   int64
+	file   *sndfile.File
+	Frames int64
 }
 
 // Attempt to open sound file
@@ -30,7 +29,9 @@ func NewSoundFile(fileName string) (*soundFile, error) {
 	if !sndfile.FormatCheck(*info) {
 		panic(errors.New("bad format"))
 	}
-	sf.Channels = int(info.Channels)
+	if info.Channels > 1 {
+		panic("not mono input")
+	}
 	sf.Frames = info.Frames
 	if sf.Frames > SF_MAX_NUM_FRAMES {
 		sf.Frames = SF_MAX_NUM_FRAMES

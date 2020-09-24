@@ -101,7 +101,9 @@ func (e *featureExtractor) makeLogFreqMap(sampleRate, fftN, fftOutN int) {
 
 // discrete cosine transform
 func (e *featureExtractor) makeDCT() {
+
 	nm := 1 / math.Sqrt(float64(e.CqtN)/2.0)
+
 	// Full spectrum DCT matrix
 	e.DCT = make([]float64, e.CqtN*e.CqtN)
 
@@ -115,11 +117,12 @@ func (e *featureExtractor) makeDCT() {
 	}
 }
 
-func (e *featureExtractor) computeMFCC(outs1 []float64, fftwPlan *fftw.Plan, fftOutN int, fftComplex *fftw.Array, fftPowerSpectrum []float64) {
+func (e *featureExtractor) computeMFCC(outs1 []float64, fftwPlan *fftw.Plan, fftOutN int, fftComplex *fftw.Array) {
 
 	fftwPlan.Execute()
 
 	// Compute linear power spectrum
+	fftPowerSpectrum := make([]float64, fftOutN) // storage for FFT power spectrum
 	for i := 0; i < fftOutN; i++ {
 		x := real(fftComplex.At(i))     // Real
 		y := imag(fftComplex.At(i))     // Imaginary
@@ -150,41 +153,41 @@ func (e *featureExtractor) computeMFCC(outs1 []float64, fftwPlan *fftw.Plan, fft
 
 // extract feature vectors from multichannel audio float buffer (allocate new vector memory)
 func (e *featureExtractor) ExtractSeriesOfVectors(s *soundSpotter, fftIn *fftw.Array, fftN int, fftwPlan *fftw.Plan,
-	fftOutN int, fftComplex *fftw.Array, fftPowerSpectrum []float64) {
+	fftOutN int, fftComplex *fftw.Array) {
+
 	i := 0
-	for ; i < s.getLengthSourceShingles()-1; i++ {
-		sum := 0.0
-		j := 0
-		for ; j < WindowLength; j++ {
-			val := s.dbBuf[(i*WindowLength+j)*s.channels] // extract from left channel only
-			fftIn.Set(j, complex(val*e.hammingWin[j]*e.winNorm, 0))
-			sum += val * val
+	for ; i < s.lengthSourceShingles; i++ {
+		outputFeatures := s.dbShingles[i]
+		power := &s.dbPowers[i]
+		buf := make([]float64, WindowLength)
+		for j := 0; j < WindowLength; j++ {
+			val := 0.0
+			if i*Hop+j < len(s.dbBuf) {
+				val = s.dbBuf[i*Hop+j] // extract from left channel only
+			}
+			buf[j] = val
 		}
-		for ; j < fftN; j++ {
-			fftIn.Set(j, 0) // Zero pad the rest of the FFT window
-		}
-		s.dbPowers[i] = sum / float64(WindowLength) // database powers calculation in Bels
-		s.dbPowersCurrent[i] = sum / float64(WindowLength)
-		e.computeMFCC(s.dbShingles[i], fftwPlan, fftOutN, fftComplex, fftPowerSpectrum)
+
+		e.ExtractVector(buf, outputFeatures, power, fftIn, fftN, fftwPlan, fftOutN, fftComplex)
 	}
-	SeriesMean(s.dbPowersCurrent, s.ShingleSize)
 	s.dbSize = i
 }
 
 // extract feature vectors from MONO input buffer
-func (e *featureExtractor) ExtractVector(inputSamps, outputFeatures []float64, power *float64, fftIn *fftw.Array,
-	fftN int, fftwPlan *fftw.Plan, fftOutN int, fftComplex *fftw.Array, fftPowerSpectrum []float64) {
+func (e *featureExtractor) ExtractVector(buf, outputFeatures []float64, power *float64, fftIn *fftw.Array,
+	fftN int, fftwPlan *fftw.Plan, fftOutN int, fftComplex *fftw.Array) {
+
 	sum := 0.0
-	i := 0
-	for ; i < WindowLength; i++ {
-		val := inputSamps[i]
+	j := 0
+	for ; j < WindowLength; j++ {
+		val := buf[j]
+		fftIn.Set(j, complex(val*e.hammingWin[j]*e.winNorm, 0))
 		sum += val * val
-		fftIn.Set(i, complex(val*e.hammingWin[i]*e.winNorm, 0))
 	}
 	// zero pad the rest of the FFT window
-	for ; i < fftN; i++ {
-		fftIn.Set(i, 0)
+	for ; j < fftN; j++ {
+		fftIn.Set(j, 0)
 	}
-	*power = sum / float64(WindowLength)                                           // power calculation in Bels
-	e.computeMFCC(outputFeatures, fftwPlan, fftOutN, fftComplex, fftPowerSpectrum) // extract MFCC and place result in outputFeatures
+	*power = sum / float64(WindowLength)                         // power calculation in Bels
+	e.computeMFCC(outputFeatures, fftwPlan, fftOutN, fftComplex) // extract MFCC and place result in outputFeatures
 }

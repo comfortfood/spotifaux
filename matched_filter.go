@@ -73,7 +73,7 @@ func (f *matchedFilter) sumCrossCorrMatrixDiagonals(shingleSize, dbSize int) {
 }
 
 func (f *matchedFilter) updateDatabaseNorms(s *soundSpotter) {
-	for k := 0; k < s.getLengthSourceShingles(); k++ {
+	for k := 0; k < s.lengthSourceShingles; k++ {
 		sPtr := s.dbShingles[k]
 		if sPtr[s.loFeature] > NEGINF {
 			f.sNorm[k] = VectorSumSquares(sPtr[s.loFeature:], s.hiFeature-s.loFeature+1)

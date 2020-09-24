@@ -14,7 +14,7 @@ func main() {
 	if len(os.Args) > 1 {
 		fileName = os.Args[1]
 	} else {
-		fileName = "/Users/wyatttall/git/spotifaux/db/madonna-16kHz.wav"
+		fileName = "/Users/wyatttall/git/spotifaux/recreate/bell-16kHz.wav"
 	}
 	var inputSrc spotifaux.Source
 	//inputSrc = newFixedSource("/Users/wyatttall/git/BLAST/soundspotter/out")
@@ -24,7 +24,7 @@ func main() {
 		panic(err)
 	}
 
-	dbBuf := make([]float64, sf.Frames*int64(sf.Channels))
+	dbBuf := make([]float64, sf.Frames)
 	_, err = sf.ReadFrames(dbBuf)
 	if err != nil {
 		panic(err)
@@ -34,21 +34,19 @@ func main() {
 	fftOutN := fftN/2 + 1           // linear frequency power spectrum values (automatic)
 
 	// FFTW memory allocation
-	fftIn := fftw.NewArray(fftN)                 // storage for FFT input
-	fftComplex := fftw.NewArray(fftOutN)         // storage for FFT output
-	fftPowerSpectrum := make([]float64, fftOutN) // storage for FFT power spectrum
+	fftIn := fftw.NewArray(fftN)         // storage for FFT input
+	fftComplex := fftw.NewArray(fftOutN) // storage for FFT output
 
 	// FFTW plan caching
 	fftwPlan := fftw.NewPlan(fftIn, fftComplex, fftw.Forward, fftw.Estimate)
 
 	e := spotifaux.NewFeatureExtractor(spotifaux.SAMPLE_RATE, fftN, fftOutN)
 
-	s := spotifaux.NewSoundSpotter(spotifaux.SAMPLE_RATE, sf.Channels, dbBuf, sf.Frames, e.CqtN)
+	s := spotifaux.NewSoundSpotter(spotifaux.SAMPLE_RATE, dbBuf, sf.Frames, e.CqtN)
 
-	e.ExtractSeriesOfVectors(s, fftIn, fftN, fftwPlan, fftOutN, fftComplex, fftPowerSpectrum)
+	e.ExtractSeriesOfVectors(s, fftIn, fftN, fftwPlan, fftOutN, fftComplex)
 
-	inputSamps := make([]float64, spotifaux.WindowLength*sf.Channels)
-	outputFeatures := make([]float64, spotifaux.WindowLength*sf.Channels)
+	inputSamps := make([]float64, spotifaux.WindowLength)
 	iter := 0
 	nn := 0
 	iterMax := ITER_MAX
@@ -64,7 +62,6 @@ func main() {
 		for nn = 0; nn < spotifaux.WindowLength; nn++ {
 			//TODO: wyatt says fixup with real random
 			inputSamps[nn] = inputSrc.Float64() //(nn%512)/512.0f;
-			outputFeatures[nn] = 0.0
 		}
 
 		if muxi == 0 {
@@ -72,10 +69,8 @@ func main() {
 		}
 
 		// inputSamps holds the audio samples, convert inputSamps to outputFeatures (FFT buffer)
-		e.ExtractVector(inputSamps, outputFeatures, &s.InPowers[muxi], fftIn, fftN, fftwPlan, fftOutN, fftComplex, fftPowerSpectrum)
+		e.ExtractVector(inputSamps, s.InShingles[muxi], &s.InPowers[muxi], fftIn, fftN, fftwPlan, fftOutN, fftComplex)
 		// insert MFCC into SeriesOfVectors
-		copy(s.InShingles[muxi], outputFeatures[:s.CqtN])
-		// insert shingles into Matcher
 		s.Matcher.Insert(s, muxi)
 		// Do the matching at shingle end
 		if muxi == s.ShingleSize-1 {

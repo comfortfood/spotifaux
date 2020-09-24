@@ -42,8 +42,7 @@ func (m *matcher) match(s *soundSpotter) int {
 	// DD now contains (1 x N) multi-dimensional matched filter output
 	for k := 0; k < s.dbSize-s.ShingleSize+1; k++ {
 		sk := m.sNorm[k]
-		pk := s.dbPowersCurrent[k]
-		if !math.IsNaN(pk) && !(sk == NEGINF) && pk > s.pwr_abs_thresh {
+		if !(sk == NEGINF) {
 			// The norm matched filter distance  is the Euclidean distance between the vectors
 			dist = 2 - 2/(qN0*sk)*m.DD[k] // squared Euclidean distance
 			dRadius = math.Abs(dist)      // Distance from search radius

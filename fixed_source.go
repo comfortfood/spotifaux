@@ -7,7 +7,7 @@ import (
 )
 
 type Source interface {
-	Float64() float64
+	Float64() (float64, error)
 	Close() error
 }
 
@@ -31,14 +31,14 @@ func newFixedSource(fileName string) *fixedSource {
 	return r
 }
 
-func (s *fixedSource) Float64() float64 {
+func (s *fixedSource) Float64() (float64, error) {
 	s.scanner.Scan()
 	v, err := strconv.ParseFloat(s.scanner.Text(), 64)
 	if err != nil {
 		panic(err)
 	}
 
-	return v
+	return v, nil
 }
 
 func (s *fixedSource) Close() error {

@@ -1,12 +1,14 @@
 package spotifaux
 
+import "errors"
+
 type wavSource struct {
 	dbBuf []float64
 	i     int
 }
 
 func NewWavSource() *wavSource {
-	sf, err := NewSoundFile("/Users/wyatttall/git/spotifaux/recreate/bell-16kHz.wav")
+	sf, err := NewSoundFile("/Users/wyatttall/git/spotifaux/recreate/westminster-16kHz.wav")
 	if err != nil {
 		panic(err)
 	}
@@ -28,10 +30,13 @@ func NewWavSource() *wavSource {
 	return &wavSource{dbBuf: dbBuf}
 }
 
-func (s *wavSource) Float64() float64 {
+func (s *wavSource) Float64() (float64, error) {
 	i := s.i
+	if i >= len(s.dbBuf) {
+		return 0, errors.New("out of bounds")
+	}
 	s.i += 1
-	return s.dbBuf[i]
+	return s.dbBuf[i], nil
 }
 
 func (s *wavSource) Close() error {

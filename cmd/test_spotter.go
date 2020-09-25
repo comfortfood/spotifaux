@@ -7,14 +7,12 @@ import (
 	"spotifaux"
 )
 
-const ITER_MAX = 1000
-
 func main() {
 	var fileName string
 	if len(os.Args) > 1 {
 		fileName = os.Args[1]
 	} else {
-		fileName = "/Users/wyatttall/git/spotifaux/recreate/bell-16kHz.wav"
+		fileName = "/Users/wyatttall/git/spotifaux/db/slidingdown-16kHz.wav"
 	}
 	var inputSrc spotifaux.Source
 	//inputSrc = newFixedSource("/Users/wyatttall/git/BLAST/soundspotter/out")
@@ -46,45 +44,44 @@ func main() {
 
 	e.ExtractSeriesOfVectors(s, fftIn, fftN, fftwPlan, fftOutN, fftComplex)
 
+	rawInputSamps := make([]float64, spotifaux.Hop*(s.ShingleSize-1)+spotifaux.WindowLength)
 	inputSamps := make([]float64, spotifaux.WindowLength)
-	iter := 0
-	nn := 0
-	iterMax := ITER_MAX
-	iterMax = 140
 
 	wav := spotifaux.NewWavWriter("out.wav")
 
-	foundWinner := false
-
-	iter = 0
-	muxi := 0
-	for ; iter < iterMax; iter++ {
-		for nn = 0; nn < spotifaux.WindowLength; nn++ {
-			//TODO: wyatt says fixup with real random
-			inputSamps[nn] = inputSrc.Float64() //(nn%512)/512.0f;
+	breakNext := false
+	iter := 0
+	for {
+		if breakNext {
+			break
 		}
 
-		if muxi == 0 {
-			s.SyncOnShingleStart() // update parameters at shingleStart
-		}
-
-		// inputSamps holds the audio samples, convert inputSamps to outputFeatures (FFT buffer)
-		e.ExtractVector(inputSamps, s.InShingles[muxi], &s.InPowers[muxi], fftIn, fftN, fftwPlan, fftOutN, fftComplex)
-		// insert MFCC into SeriesOfVectors
-		s.Matcher.Insert(s, muxi)
-		// Do the matching at shingle end
-		if muxi == s.ShingleSize-1 {
-			outputBuffer := s.Match()
-			if s.Winner != -1 || foundWinner {
-				foundWinner = true
-				fmt.Printf("%d ", s.Winner)
-				wav.WriteItems(outputBuffer)
+		for nn := 0; nn < (spotifaux.Hop*(s.ShingleSize-1) + spotifaux.WindowLength); nn++ {
+			rawInputSamps[nn], err = inputSrc.Float64()
+			if err != nil {
+				breakNext = true
 			}
 		}
 
-		// post-insert buffer multiplex increment
-		muxi = (muxi + 1) % s.ShingleSize
+		s.SyncOnShingleStart() // update parameters at shingleStart
+
+		for muxi := 0; muxi < s.ShingleSize; muxi++ {
+			for nn := 0; nn < spotifaux.WindowLength; nn++ {
+				inputSamps[nn] = rawInputSamps[muxi*spotifaux.Hop+nn]
+			}
+			// inputSamps holds the audio samples, convert inputSamps to outputFeatures (FFT buffer)
+			e.ExtractVector(inputSamps, s.InShingles[muxi], &s.InPowers[muxi], fftIn, fftN, fftwPlan, fftOutN, fftComplex)
+			// insert MFCC into SeriesOfVectors
+			s.Matcher.Insert(s, muxi)
+		}
+
+		outputBuffer := s.Match()
+		fmt.Printf("%d ", s.Winner)
+		wav.WriteItems(outputBuffer)
+		iter++
 	}
+
+	fmt.Printf("\n%d", iter)
 
 	err = inputSrc.Close()
 	if err != nil {

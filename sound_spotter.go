@@ -8,7 +8,7 @@ import (
 const SS_MAX_DATABASE_SECS = 7200
 const SS_FFT_LENGTH = 800
 const WindowLength = 400
-const Hop = 400
+const Hop = 160
 const SAMPLE_RATE = 16000
 
 type soundSpotter struct {
@@ -23,7 +23,7 @@ type soundSpotter struct {
 	loFeature            int
 	hiFeature            int
 	dbBuf                []float64 // SoundSpotter pointer to PD internal buf
-	lengthSourceShingles int
+	LengthSourceShingles int
 
 	ShingleSize int
 
@@ -41,10 +41,9 @@ type soundSpotter struct {
 func NewSoundSpotter(sampleRate int, dbBuf []float64, numFrames int64, cqtN int) *soundSpotter {
 
 	s := &soundSpotter{
-		sampleRate:     sampleRate,
 		loFeature:      3,
 		hiFeature:      20,
-		ShingleSize:    4,
+		ShingleSize:    23,
 		Winner:         -1,
 		pwr_abs_thresh: 0.000001,
 		dbSize:         0,
@@ -67,7 +66,7 @@ func NewSoundSpotter(sampleRate int, dbBuf []float64, numFrames int64, cqtN int)
 	s.Matcher.resize(s.ShingleSize, s.maxF)
 
 	s.dbBuf = dbBuf
-	s.lengthSourceShingles = int(math.Ceil(float64(numFrames) / (float64(Hop))))
+	s.LengthSourceShingles = int(math.Ceil(float64(numFrames) / (float64(Hop))))
 	s.Matcher.frameQueue.Init()
 
 	return s
@@ -87,16 +86,14 @@ func (s *soundSpotter) Match() []float64 {
 			// sqrt(env2) has already been calculated, only take sqrt(env1) here
 			envFollow := 0.5
 			alpha := envFollow*math.Sqrt(s.InPowers[0]/s.dbPowers[s.Winner]) + (1 - envFollow)
-			if s.Winner > -1 {
-				for p := 0; p < outputLength && s.Winner*Hop+p < len(s.dbBuf); p++ {
-					output := alpha * s.dbBuf[s.Winner*Hop+p]
-					if output > 1.12 {
-						output = 1.12
-					} else if output < -1.12 {
-						output = -1.12
-					}
-					outputBuffer[p] = output * 0.8
+			for p := 0; p < outputLength && s.Winner*Hop+p < len(s.dbBuf); p++ {
+				output := alpha * s.dbBuf[s.Winner*Hop+p]
+				if output > 1.12 {
+					output = 1.12
+				} else if output < -1.12 {
+					output = -1.12
 				}
+				outputBuffer[p] = output * 0.8
 			}
 		}
 	}

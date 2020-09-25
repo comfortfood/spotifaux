@@ -156,7 +156,7 @@ func (e *featureExtractor) ExtractSeriesOfVectors(s *soundSpotter, fftIn *fftw.A
 	fftOutN int, fftComplex *fftw.Array) {
 
 	i := 0
-	for ; i < s.lengthSourceShingles; i++ {
+	for ; i < s.LengthSourceShingles; i++ {
 		outputFeatures := s.dbShingles[i]
 		power := &s.dbPowers[i]
 		buf := make([]float64, WindowLength)

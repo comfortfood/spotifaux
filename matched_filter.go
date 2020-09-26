@@ -44,7 +44,7 @@ func (f *matchedFilter) Insert(s *soundSpotter, muxi int) {
 
 func (f *matchedFilter) incrementalCrossCorrelation(s *soundSpotter, muxi int) {
 	// Make Correlation matrix entry for this frame against entire source database
-	for dpp := 0; dpp < s.dbSize; dpp++ {
+	for dpp := 0; dpp < s.LengthSourceShingles; dpp++ {
 		coor := 0.0 // initialize correlation cell
 		for _, qp := range s.chosenFeatures {
 			coor += s.InShingles[muxi][qp] * s.dbShingles[muxi+dpp][qp]
@@ -55,7 +55,7 @@ func (f *matchedFilter) incrementalCrossCorrelation(s *soundSpotter, muxi int) {
 
 func (f *matchedFilter) sumCrossCorrMatrixDiagonals(s *soundSpotter) {
 	// Matched Filter length W hop H over N frames
-	for k := 0; k < s.dbSize; k++ {
+	for k := 0; k < s.LengthSourceShingles; k++ {
 		f.DD[k] = 0.0
 		for l := 0; l < s.ShingleSize; l++ {
 			f.DD[k] += f.D[l][k+l] // Sum rest of k's diagonal up to W elements

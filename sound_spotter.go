@@ -26,7 +26,6 @@ type soundSpotter struct {
 
 	ShingleSize int
 
-	dbSize  int
 	Winner  int      // winning frame/shingle in seriesOfVectors match
 	Matcher *matcher // shingle matching algorithm
 

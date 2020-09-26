@@ -40,7 +40,7 @@ func (m *matcher) match(s *soundSpotter) int {
 	m.execute(s)
 	qN0 := m.qNorm[0] // pre-calculate denominator coefficient
 	// DD now contains (1 x N) multi-dimensional matched filter output
-	for k := 0; k < s.dbSize; k++ {
+	for k := 0; k < s.LengthSourceShingles; k++ {
 		sk := m.sNorm[k]
 		if !(sk == NEGINF) {
 			// The norm matched filter distance  is the Euclidean distance between the vectors

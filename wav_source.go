@@ -20,13 +20,6 @@ func NewWavSource() *wavSource {
 		panic(err)
 	}
 
-	fftN := SS_FFT_LENGTH // linear frequency resolution (FFT) (user)
-	fftOutN := fftN/2 + 1 // linear frequency power spectrum values (automatic)
-
-	e := NewFeatureExtractor(SAMPLE_RATE, fftN, fftOutN)
-
-	NewSoundSpotter(SAMPLE_RATE, dbBuf, sf.Frames, e.CqtN)
-
 	return &wavSource{dbBuf: dbBuf}
 }
 

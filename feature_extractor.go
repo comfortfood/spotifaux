@@ -155,8 +155,7 @@ func (e *featureExtractor) computeMFCC(outs1 []float64, fftwPlan *fftw.Plan, fft
 func (e *featureExtractor) ExtractSeriesOfVectors(s *soundSpotter, fftIn *fftw.Array, fftN int, fftwPlan *fftw.Plan,
 	fftOutN int, fftComplex *fftw.Array) {
 
-	i := 0
-	for ; i < s.LengthSourceShingles; i++ {
+	for i := 0; i < s.LengthSourceShingles; i++ {
 		outputFeatures := s.dbShingles[i]
 		power := &s.dbPowers[i]
 		buf := make([]float64, WindowLength)
@@ -170,7 +169,6 @@ func (e *featureExtractor) ExtractSeriesOfVectors(s *soundSpotter, fftIn *fftw.A
 
 		e.ExtractVector(buf, outputFeatures, power, fftIn, fftN, fftwPlan, fftOutN, fftComplex)
 	}
-	s.dbSize = i
 }
 
 // extract feature vectors from MONO input buffer

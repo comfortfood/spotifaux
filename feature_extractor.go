@@ -15,7 +15,8 @@ type featureExtractor struct {
 	cqStop     []int     // sparse constant-Q matrix coding indices
 	DCT        []float64 // discrete cosine transform coefficients
 	hammingWin []float64
-	winNorm    float64 // Hamming window normalization factor
+	winNorm    float64   // Hamming window normalization factor
+	SNorm      []float64 // query L2 norm vector
 }
 
 func NewFeatureExtractor(sampleRate, fftN, fftOutN int) *featureExtractor {
@@ -155,6 +156,8 @@ func (e *featureExtractor) computeMFCC(outs1 []float64, fftwPlan *fftw.Plan, fft
 func (e *featureExtractor) ExtractSeriesOfVectors(s *soundSpotter, fftIn *fftw.Array, fftN int, fftwPlan *fftw.Plan,
 	fftOutN int, fftComplex *fftw.Array) {
 
+	e.SNorm = make([]float64, s.LengthSourceShingles)
+
 	for i := 0; i < s.LengthSourceShingles; i++ {
 		outputFeatures := s.dbShingles[i]
 		power := &s.dbPowers[i]
@@ -167,13 +170,15 @@ func (e *featureExtractor) ExtractSeriesOfVectors(s *soundSpotter, fftIn *fftw.A
 			buf[j] = val
 		}
 
-		e.ExtractVector(buf, outputFeatures, power, fftIn, fftN, fftwPlan, fftOutN, fftComplex)
+		e.ExtractVector(buf, outputFeatures, power, fftIn, fftN, fftwPlan, fftOutN, fftComplex, s.ChosenFeatures,
+			&e.SNorm[i])
 	}
+	SeriesSqrt(e.SNorm, s.ShingleSize)
 }
 
 // extract feature vectors from MONO input buffer
 func (e *featureExtractor) ExtractVector(buf, outputFeatures []float64, power *float64, fftIn *fftw.Array,
-	fftN int, fftwPlan *fftw.Plan, fftOutN int, fftComplex *fftw.Array) {
+	fftN int, fftwPlan *fftw.Plan, fftOutN int, fftComplex *fftw.Array, chosenFeatures []int, norm *float64) {
 
 	sum := 0.0
 	j := 0
@@ -188,4 +193,11 @@ func (e *featureExtractor) ExtractVector(buf, outputFeatures []float64, power *f
 	}
 	*power = sum / float64(WindowLength)                         // power calculation in Bels
 	e.computeMFCC(outputFeatures, fftwPlan, fftOutN, fftComplex) // extract MFCC and place result in outputFeatures
+
+	// Keep input L2 norms for correct shingle norming at distance computation stage
+	if outputFeatures[chosenFeatures[0]] > NEGINF {
+		*norm = VectorSumSquares(outputFeatures, chosenFeatures)
+	} else {
+		*norm = 0.0
+	}
 }

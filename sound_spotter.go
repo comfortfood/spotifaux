@@ -20,7 +20,7 @@ type soundSpotter struct {
 
 	maxF int // Maximum number of source frames to extract (initial size of database)
 
-	chosenFeatures       []int
+	ChosenFeatures       []int
 	dbBuf                []float64 // SoundSpotter pointer to PD internal buf
 	LengthSourceShingles int
 
@@ -39,7 +39,7 @@ type soundSpotter struct {
 func NewSoundSpotter(sampleRate int, dbBuf []float64, numFrames int64, cqtN int) *soundSpotter {
 
 	s := &soundSpotter{
-		chosenFeatures: []int{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21},
+		ChosenFeatures: []int{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21},
 		ShingleSize:    25,
 		Winner:         -1,
 		pwr_abs_thresh: 0.000001,
@@ -69,19 +69,17 @@ func NewSoundSpotter(sampleRate int, dbBuf []float64, numFrames int64, cqtN int)
 }
 
 // Perform matching on shingle boundary
-func (s *soundSpotter) Match() []float64 {
+func (s *soundSpotter) Match(inPower, qN0 float64, sNorm []float64) []float64 {
 	outputLength := Hop * s.ShingleSize
 	outputBuffer := make([]float64, outputLength) // fix size at constructor ?
-	// calculate powers for detecting silence and balancing output with input
-	SeriesMean(s.InPowers, s.ShingleSize)
-	if s.InPowers[0] > s.pwr_abs_thresh {
+	if inPower > s.pwr_abs_thresh {
 		// matched filter matching to get winning database shingle
-		s.Winner = s.Matcher.match(s)
+		s.Winner = s.Matcher.match(s, qN0, sNorm)
 		if s.Winner > -1 {
 			// Envelope follow factor is alpha * sqrt(env1/env2) + (1-alpha)
 			// sqrt(env2) has already been calculated, only take sqrt(env1) here
 			envFollow := 0.5
-			alpha := envFollow*math.Sqrt(s.InPowers[0]/s.dbPowers[s.Winner]) + (1 - envFollow)
+			alpha := envFollow*math.Sqrt(inPower/s.dbPowers[s.Winner]) + (1 - envFollow)
 			for p := 0; p < outputLength && s.Winner*Hop+p < len(s.dbBuf); p++ {
 				output := alpha * s.dbBuf[s.Winner*Hop+p]
 				if output > 1.12 {
@@ -97,10 +95,6 @@ func (s *soundSpotter) Match() []float64 {
 }
 
 func (s *soundSpotter) SyncOnShingleStart() {
-
 	// update the power threshold data
 	s.Matcher.frameQueue.Init()
-
-	// update the database norms for new parameters
-	s.Matcher.updateDatabaseNorms(s)
 }

@@ -70,17 +70,26 @@ func main() {
 
 		s.SyncOnShingleStart() // update parameters at shingleStart
 
+		qNorm := make([]float64, s.ShingleSize)
+
 		for muxi := 0; muxi < s.ShingleSize; muxi++ {
 			for nn := 0; nn < spotifaux.WindowLength; nn++ {
 				inputSamps[nn] = rawInputSamps[muxi*spotifaux.Hop+nn]
 			}
 			// inputSamps holds the audio samples, convert inputSamps to outputFeatures (FFT buffer)
-			e.ExtractVector(inputSamps, s.InShingles[muxi], &s.InPowers[muxi], fftIn, fftN, fftwPlan, fftOutN, fftComplex)
+			e.ExtractVector(inputSamps, s.InShingles[muxi], &s.InPowers[muxi], fftIn, fftN, fftwPlan, fftOutN,
+				fftComplex, s.ChosenFeatures, &qNorm[muxi])
 			// insert MFCC into SeriesOfVectors
 			s.Matcher.Insert(s, muxi)
 		}
 
-		outputBuffer := s.Match()
+		// Perform query shingle norming
+		spotifaux.SeriesSqrt(qNorm, s.ShingleSize)
+
+		// calculate powers for detecting silence and balancing output with input
+		spotifaux.SeriesMean(s.InPowers, s.ShingleSize)
+
+		outputBuffer := s.Match(s.InPowers[0], qNorm[0], e.SNorm)
 		fmt.Printf("%d ", s.Winner)
 		wav.WriteItems(outputBuffer)
 		iter++

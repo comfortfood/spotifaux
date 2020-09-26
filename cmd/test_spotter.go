@@ -56,7 +56,12 @@ func main() {
 			break
 		}
 
-		for nn := 0; nn < (spotifaux.Hop*(s.ShingleSize-1) + spotifaux.WindowLength); nn++ {
+		nn := 0
+		for ; iter > 0 && nn < spotifaux.WindowLength-spotifaux.Hop; nn++ {
+			rawInputSamps[nn] = rawInputSamps[spotifaux.Hop*s.ShingleSize+nn]
+		}
+
+		for ; nn < (spotifaux.Hop*(s.ShingleSize-1) + spotifaux.WindowLength); nn++ {
 			rawInputSamps[nn], err = inputSrc.Float64()
 			if err != nil {
 				breakNext = true

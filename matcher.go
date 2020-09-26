@@ -37,10 +37,10 @@ func (m *matcher) match(s *soundSpotter) int {
 	minDist := 10.0
 	winner := -1
 	// Perform the recursive Matched Filtering (core match algorithm)
-	m.execute(s.ShingleSize, s.dbSize)
+	m.execute(s)
 	qN0 := m.qNorm[0] // pre-calculate denominator coefficient
 	// DD now contains (1 x N) multi-dimensional matched filter output
-	for k := 0; k < s.dbSize-s.ShingleSize+1; k++ {
+	for k := 0; k < s.dbSize; k++ {
 		sk := m.sNorm[k]
 		if !(sk == NEGINF) {
 			// The norm matched filter distance  is the Euclidean distance between the vectors

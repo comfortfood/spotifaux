@@ -5,9 +5,9 @@ import (
 	"math"
 )
 
-func VectorSumSquares(vec []float64, len int) float64 {
+func VectorSumSquares(vec []float64, chosenFeatures []int) float64 {
 	sum := 0.0
-	for i := 0; i < len; i++ {
+	for _, i := range chosenFeatures {
 		v1 := vec[i]
 		sum += v1 * v1
 	}

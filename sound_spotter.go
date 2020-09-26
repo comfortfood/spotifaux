@@ -20,8 +20,7 @@ type soundSpotter struct {
 
 	maxF int // Maximum number of source frames to extract (initial size of database)
 
-	loFeature            int
-	hiFeature            int
+	chosenFeatures       []int
 	dbBuf                []float64 // SoundSpotter pointer to PD internal buf
 	LengthSourceShingles int
 
@@ -41,12 +40,10 @@ type soundSpotter struct {
 func NewSoundSpotter(sampleRate int, dbBuf []float64, numFrames int64, cqtN int) *soundSpotter {
 
 	s := &soundSpotter{
-		loFeature:      3,
-		hiFeature:      20,
-		ShingleSize:    23,
+		chosenFeatures: []int{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21},
+		ShingleSize:    25,
 		Winner:         -1,
 		pwr_abs_thresh: 0.000001,
-		dbSize:         0,
 		CqtN:           cqtN,
 	}
 
@@ -74,7 +71,7 @@ func NewSoundSpotter(sampleRate int, dbBuf []float64, numFrames int64, cqtN int)
 
 // Perform matching on shingle boundary
 func (s *soundSpotter) Match() []float64 {
-	outputLength := Hop*(s.ShingleSize-1) + WindowLength
+	outputLength := Hop * s.ShingleSize
 	outputBuffer := make([]float64, outputLength) // fix size at constructor ?
 	// calculate powers for detecting silence and balancing output with input
 	SeriesMean(s.InPowers, s.ShingleSize)

@@ -173,6 +173,8 @@ func (e *featureExtractor) ExtractSeriesOfVectors(s *soundSpotter, fftIn *fftw.A
 		e.ExtractVector(buf, outputFeatures, power, fftIn, fftN, fftwPlan, fftOutN, fftComplex, s.ChosenFeatures,
 			&e.SNorm[i])
 	}
+	SeriesMean(s.dbPowers, s.ShingleSize)
+
 	SeriesSqrt(e.SNorm, s.ShingleSize)
 }
 

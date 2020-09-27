@@ -5,9 +5,11 @@ import (
 	"math"
 )
 
+var NEGINF = math.Inf(-1)
+
 type matcher struct {
 	frameQueue list.List
-	matchedFilter
+	D          [][]float64 // cross-correlation matrix
 }
 
 // Push a frame onto the frameQueue
@@ -36,15 +38,24 @@ func (m *matcher) match(s *soundSpotter, qN0 float64, sNorm []float64) int {
 	dRadius := 0.0
 	minDist := 10.0
 	winner := -1
+
+	// Matched filter matrix
+	DD := make([]float64, s.LengthSourceShingles)
+
 	// Perform the recursive Matched Filtering (core match algorithm)
-	m.execute(s)
+	for k := 0; k < s.LengthSourceShingles; k++ {
+		for l := 0; l < s.ShingleSize; l++ {
+			DD[k] += m.D[l][k+l] // Sum rest of k's diagonal up to W elements
+		}
+	}
+
 	// DD now contains (1 x N) multi-dimensional matched filter output
 	for k := 0; k < s.LengthSourceShingles; k++ {
 		sk := sNorm[k]
 		if !(sk == NEGINF) {
 			// The norm matched filter distance  is the Euclidean distance between the vectors
-			dist = 2 - 2/(qN0*sk)*m.DD[k] // squared Euclidean distance
-			dRadius = math.Abs(dist)      // Distance from search radius
+			dist = 2 - 2/(qN0*sk)*DD[k] // squared Euclidean distance
+			dRadius = math.Abs(dist)    // Distance from search radius
 			// Perform min-dist search
 			if dRadius < minD { // prefer matches at front
 				minD = dRadius
@@ -62,4 +73,15 @@ func (m *matcher) match(s *soundSpotter, qN0 float64, sNorm []float64) int {
 	}
 	dist = minDist
 	return winner
+}
+
+func (m *matcher) IncrementalCrossCorrelation(s *soundSpotter, muxi int) {
+	// Make Correlation matrix entry for this frame against entire source database
+	for dpp := 0; dpp < s.LengthSourceShingles; dpp++ {
+		coor := 0.0 // initialize correlation cell
+		for _, qp := range s.ChosenFeatures {
+			coor += s.InShingles[muxi][qp] * s.dbShingles[muxi+dpp][qp]
+		}
+		m.D[muxi][muxi+dpp] = coor
+	}
 }

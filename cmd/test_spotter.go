@@ -80,7 +80,7 @@ func main() {
 			e.ExtractVector(inputSamps, s.InShingles[muxi], &s.InPowers[muxi], fftIn, fftN, fftwPlan, fftOutN,
 				fftComplex, s.ChosenFeatures, &qNorm[muxi])
 			// insert MFCC into SeriesOfVectors
-			s.Matcher.Insert(s, muxi)
+			s.Matcher.IncrementalCrossCorrelation(s, muxi)
 		}
 
 		// Perform query shingle norming
@@ -89,9 +89,9 @@ func main() {
 		// calculate powers for detecting silence and balancing output with input
 		spotifaux.SeriesMean(s.InPowers, s.ShingleSize)
 
-		outputBuffer := s.Match(s.InPowers[0], qNorm[0], e.SNorm)
-		fmt.Printf("%d ", s.Winner)
-		wav.WriteItems(outputBuffer)
+		winner := s.Match(s.InPowers[0], qNorm[0], e.SNorm)
+		fmt.Printf("%d ", winner)
+		wav.WriteItems(s.Output(s.InPowers[0], winner))
 		iter++
 	}
 

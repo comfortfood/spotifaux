@@ -17,16 +17,6 @@ func main() {
 	var inputSrc spotifaux.Source
 	//inputSrc = newFixedSource("/Users/wyatttall/git/BLAST/soundspotter/out")
 	inputSrc = spotifaux.NewWavSource()
-	sf, err := spotifaux.NewSoundFile(fileName)
-	if err != nil {
-		panic(err)
-	}
-
-	dbBuf := make([]float64, sf.Frames)
-	_, err = sf.ReadFrames(dbBuf)
-	if err != nil {
-		panic(err)
-	}
 
 	fftN := spotifaux.SS_FFT_LENGTH // linear frequency resolution (FFT) (user)
 	fftOutN := fftN/2 + 1           // linear frequency power spectrum values (automatic)
@@ -40,9 +30,13 @@ func main() {
 
 	e := spotifaux.NewFeatureExtractor(spotifaux.SAMPLE_RATE, fftN, fftOutN)
 
-	s := spotifaux.NewSoundSpotter(spotifaux.SAMPLE_RATE, dbBuf, sf.Frames, e.CqtN)
+	s := spotifaux.NewSoundSpotter(spotifaux.SAMPLE_RATE, e.CqtN)
 
-	e.ExtractSeriesOfVectors(s, fftIn, fftN, fftwPlan, fftOutN, fftComplex)
+	var err error
+	err = e.ExtractSeriesOfVectors(fileName, s, fftIn, fftN, fftwPlan, fftOutN, fftComplex)
+	if err != nil {
+		panic(err)
+	}
 
 	rawInputSamps := make([]float64, spotifaux.Hop*(s.ShingleSize-1)+spotifaux.WindowLength)
 	inputSamps := make([]float64, spotifaux.WindowLength)
@@ -62,36 +56,28 @@ func main() {
 		}
 
 		for ; nn < (spotifaux.Hop*(s.ShingleSize-1) + spotifaux.WindowLength); nn++ {
-			rawInputSamps[nn], err = inputSrc.Float64()
+			f, err := inputSrc.Float64()
+			rawInputSamps[nn] = f
 			if err != nil {
 				breakNext = true
 			}
 		}
-
-		qNorm := make([]float64, s.ShingleSize)
 
 		for muxi := 0; muxi < s.ShingleSize; muxi++ {
 			for nn := 0; nn < spotifaux.WindowLength; nn++ {
 				inputSamps[nn] = rawInputSamps[muxi*spotifaux.Hop+nn]
 			}
 			// inputSamps holds the audio samples, convert inputSamps to outputFeatures (FFT buffer)
-			e.ExtractVector(inputSamps, s.InShingles[muxi], &s.InPowers[muxi], fftIn, fftN, fftwPlan, fftOutN,
-				fftComplex, s.ChosenFeatures, &qNorm[muxi])
+			e.ExtractVector(inputSamps, s.InShingles[muxi], fftIn, fftN, fftwPlan, fftOutN, fftComplex)
 		}
 
-		// Perform query shingle norming
-		spotifaux.SeriesSqrt(qNorm, s.ShingleSize)
-
-		// calculate powers for detecting silence and balancing output with input
-		spotifaux.SeriesMean(s.InPowers, s.ShingleSize)
-
-		winner := -1
-		if s.InPowers[0] > 0.000001 {
-			// matched filter matching to get winning database shingle
-			winner = spotifaux.Match(s, qNorm[0], e.SNorm)
+		// matched filter matching to get winning database shingle
+		winner, _, err := spotifaux.Match(fileName, s)
+		if err != nil {
+			panic(err)
 		}
 		fmt.Printf("%d ", winner)
-		wav.WriteItems(s.Output(s.InPowers[0], winner))
+		//wav.WriteItems(s.Output(s.InPowers[0], winner))
 		iter++
 	}
 

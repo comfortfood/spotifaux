@@ -2,9 +2,8 @@ package spotifaux
 
 import (
 	"math"
+	"strings"
 )
-
-var NEGINF = math.Inf(-1)
 
 // Matching algorithm using recursive matched filter algorithm
 // This algorithm is based on factoring the multi-dimensional convolution
@@ -17,7 +16,12 @@ var NEGINF = math.Inf(-1)
 // Substantially Modified: Michael A. Casey, August 24th - 27th 2007
 // Factored out dependency on SoundSpotter class, August 8th - 9th 2009
 // Added power features for threshold tests
-func Match(s *soundSpotter, qN0 float64, sNorm []float64) int {
+func Match(fileName string, s *soundSpotter) (int, float64, error) {
+
+	dr, err := NewDatReader(fileName[0:strings.LastIndex(fileName, ".")]+".dat", s.CqtN)
+	if err != nil {
+		return 0, 0.0, err
+	}
 
 	dist := 0.0
 	minD := 1e6
@@ -25,46 +29,59 @@ func Match(s *soundSpotter, qN0 float64, sNorm []float64) int {
 	minDist := 10.0
 	winner := -1
 
-	G := make([][]float64, s.ShingleSize)
-	for dpp := 0; dpp < s.ShingleSize-1; dpp++ {
-		G[dpp] = s.dbShingles[dpp]
+	qN0 := 0.0 // TODO: more efficient with a SeriesSum
+	for muxi := 0; muxi < s.ShingleSize; muxi++ {
+		for _, qp := range s.ChosenFeatures {
+			qN0 += s.InShingles[muxi][qp] * s.InShingles[muxi][qp]
+		}
 	}
-	g := s.ShingleSize - 1
+	qN0 = math.Sqrt(qN0)
+
+	front := 0
+	dbShingles := make([][]float64, s.ShingleSize)
+	for dpp := 0; dpp < s.ShingleSize; dpp++ {
+		dbShingles[dpp], err = dr.Dat()
+		if err != nil {
+			return 0, 0.0, err
+		}
+	}
 
 	// Make Correlation matrix entry for this frame against entire source database
-	for dpp := 0; dpp < s.LengthSourceShingles; dpp++ {
+	for dpp := 0; dpp < dr.frames; dpp++ {
 
-		if dpp+s.ShingleSize-1 < s.LengthSourceShingles {
-			G[g] = s.dbShingles[dpp+s.ShingleSize-1]
-		} else {
-			G[g] = nil
-		}
-		g = (g + 1) % s.ShingleSize
-
+		sk := 0.0 // TODO: more efficient with a SeriesSum
 		DD := 0.0
 		for muxi := 0; muxi < s.ShingleSize; muxi++ {
-			y := (g + muxi) % s.ShingleSize
-			if G[y] == nil {
+			m := (front + muxi) % s.ShingleSize
+			if dbShingles[m] == nil {
 				break
 			}
 			for _, qp := range s.ChosenFeatures {
-				DD += s.InShingles[muxi][qp] * G[y][qp]
+				sk += dbShingles[m][qp] * dbShingles[m][qp]
+				DD += s.InShingles[muxi][qp] * dbShingles[m][qp]
 			}
+		}
+		sk = math.Sqrt(sk)
+
+		// The norm matched filter distance  is the Euclidean distance between the vectors
+		dist = 2 - 2/(qN0*sk)*DD // squared Euclidean distance
+		dRadius = math.Abs(dist) // Distance from search radius
+		// Perform min-dist search
+		if dRadius < minD { // prefer matches at front
+			minD = dRadius
+			minDist = dist
+			winner = dpp
 		}
 
-		sk := sNorm[dpp]
-		if sk != NEGINF {
-			// The norm matched filter distance  is the Euclidean distance between the vectors
-			dist = 2 - 2/(qN0*sk)*DD // squared Euclidean distance
-			dRadius = math.Abs(dist) // Distance from search radius
-			// Perform min-dist search
-			if dRadius < minD { // prefer matches at front
-				minD = dRadius
-				minDist = dist
-				winner = dpp
+		if dpp+s.ShingleSize < dr.frames {
+			dbShingles[front], err = dr.Dat()
+			if err != nil {
+				return 0, 0.0, err
 			}
+		} else {
+			dbShingles[front] = nil
 		}
+		front = (front + 1) % s.ShingleSize
 	}
-	dist = minDist
-	return winner
+	return winner, minDist, nil
 }

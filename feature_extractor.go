@@ -1,8 +1,11 @@
 package spotifaux
 
 import (
+	"encoding/binary"
 	"github.com/runningwild/go-fftw/fftw"
 	"math"
+	"os"
+	"strings"
 )
 
 const CQ_ENV_THRESH = 0.001
@@ -15,8 +18,7 @@ type featureExtractor struct {
 	cqStop     []int     // sparse constant-Q matrix coding indices
 	DCT        []float64 // discrete cosine transform coefficients
 	hammingWin []float64
-	winNorm    float64   // Hamming window normalization factor
-	SNorm      []float64 // query L2 norm vector
+	winNorm    float64 // Hamming window normalization factor
 }
 
 func NewFeatureExtractor(sampleRate, fftN, fftOutN int) *featureExtractor {
@@ -153,53 +155,77 @@ func (e *featureExtractor) computeMFCC(outs1 []float64, fftwPlan *fftw.Plan, fft
 }
 
 // extract feature vectors from multichannel audio float buffer (allocate new vector memory)
-func (e *featureExtractor) ExtractSeriesOfVectors(s *soundSpotter, fftIn *fftw.Array, fftN int, fftwPlan *fftw.Plan,
-	fftOutN int, fftComplex *fftw.Array) {
+func (e *featureExtractor) ExtractSeriesOfVectors(fileName string, s *soundSpotter, fftIn *fftw.Array, fftN int,
+	fftwPlan *fftw.Plan, fftOutN int, fftComplex *fftw.Array) error {
 
-	e.SNorm = make([]float64, s.LengthSourceShingles)
+	sf, err := NewSoundFile(fileName)
+	if err != nil {
+		return err
+	}
+	defer sf.Close()
 
-	for i := 0; i < s.LengthSourceShingles; i++ {
-		outputFeatures := s.dbShingles[i]
-		power := &s.dbPowers[i]
+	frames := int(math.Ceil(float64(sf.Frames) / (float64(Hop))))
+
+	dbBuf := make([]float64, sf.Frames)
+	_, err = sf.ReadFrames(dbBuf) // TODO: support calling readFrames multiple times
+	if err != nil {
+		return err
+	}
+
+	features := make([][]float64, frames)
+	for i := 0; i < frames; i++ {
+		features[i] = make([]float64, s.CqtN)
 		buf := make([]float64, WindowLength)
 		for j := 0; j < WindowLength; j++ {
 			val := 0.0
-			if i*Hop+j < len(s.dbBuf) {
-				val = s.dbBuf[i*Hop+j] // extract from left channel only
+			if i*Hop+j < len(dbBuf) {
+				val = dbBuf[i*Hop+j] // extract from left channel only
 			}
 			buf[j] = val
 		}
 
-		e.ExtractVector(buf, outputFeatures, power, fftIn, fftN, fftwPlan, fftOutN, fftComplex, s.ChosenFeatures,
-			&e.SNorm[i])
+		e.ExtractVector(buf, features[i], fftIn, fftN, fftwPlan, fftOutN, fftComplex)
 	}
-	SeriesMean(s.dbPowers, s.ShingleSize)
 
-	SeriesSqrt(e.SNorm, s.ShingleSize)
+	f, err := os.Create(fileName[0:strings.LastIndex(fileName, ".")] + ".dat")
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	fb := make([]byte, 8)
+	binary.LittleEndian.PutUint64(fb, uint64(frames))
+	_, err = f.Write(fb)
+	if err != nil {
+		return err
+	}
+
+	for i := 0; i < frames; i++ {
+		b := make([]byte, 8*s.CqtN)
+		for j, feature := range features[i] {
+			binary.LittleEndian.PutUint64(b[8*j:8+8*j], math.Float64bits(feature))
+		}
+		_, err = f.Write(b)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // extract feature vectors from MONO input buffer
-func (e *featureExtractor) ExtractVector(buf, outputFeatures []float64, power *float64, fftIn *fftw.Array,
-	fftN int, fftwPlan *fftw.Plan, fftOutN int, fftComplex *fftw.Array, chosenFeatures []int, norm *float64) {
+func (e *featureExtractor) ExtractVector(buf, outputFeatures []float64, fftIn *fftw.Array,
+	fftN int, fftwPlan *fftw.Plan, fftOutN int, fftComplex *fftw.Array) {
 
-	sum := 0.0
 	j := 0
 	for ; j < WindowLength; j++ {
 		val := buf[j]
 		fftIn.Set(j, complex(val*e.hammingWin[j]*e.winNorm, 0))
-		sum += val * val
 	}
 	// zero pad the rest of the FFT window
 	for ; j < fftN; j++ {
 		fftIn.Set(j, 0)
 	}
-	*power = sum / float64(WindowLength)                         // power calculation in Bels
 	e.computeMFCC(outputFeatures, fftwPlan, fftOutN, fftComplex) // extract MFCC and place result in outputFeatures
-
-	// Keep input L2 norms for correct shingle norming at distance computation stage
-	if outputFeatures[chosenFeatures[0]] > NEGINF {
-		*norm = VectorSumSquares(outputFeatures, chosenFeatures)
-	} else {
-		*norm = 0.0
-	}
 }

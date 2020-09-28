@@ -2,31 +2,7 @@ package spotifaux
 
 import (
 	"C"
-	"math"
 )
-
-func VectorSumSquares(vec []float64, chosenFeatures []int) float64 {
-	sum := 0.0
-	for _, i := range chosenFeatures {
-		v1 := vec[i]
-		sum += v1 * v1
-	}
-	return sum
-}
-
-func SeriesSqrt(v []float64, seqlen int) {
-	SeriesSum(v, seqlen)
-	for i := 0; i < len(v); i++ {
-		v[i] = math.Sqrt(v[i])
-	}
-}
-
-func SeriesMean(v []float64, seqlen int) {
-	SeriesSum(v, seqlen)
-	for i := 0; i < len(v); i++ {
-		v[i] /= float64(seqlen)
-	}
-}
 
 func SeriesSum(v []float64, seqlen int) {
 

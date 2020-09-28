@@ -1,25 +1,10 @@
 package spotifaux
 
 import (
-	"container/list"
 	"math"
 )
 
 var NEGINF = math.Inf(-1)
-
-type matcher struct {
-	frameQueue list.List
-	D          [][]float64 // cross-correlation matrix
-}
-
-// Push a frame onto the frameQueue
-// and pop the last frame from the queue
-func (m *matcher) pushFrameQueue() {
-	for m.frameQueue.Len() > 0 {
-		e := m.frameQueue.Front()
-		m.frameQueue.Remove(e)
-	}
-}
 
 // Matching algorithm using recursive matched filter algorithm
 // This algorithm is based on factoring the multi-dimensional convolution
@@ -32,56 +17,54 @@ func (m *matcher) pushFrameQueue() {
 // Substantially Modified: Michael A. Casey, August 24th - 27th 2007
 // Factored out dependency on SoundSpotter class, August 8th - 9th 2009
 // Added power features for threshold tests
-func (m *matcher) match(s *soundSpotter, qN0 float64, sNorm []float64) int {
+func Match(s *soundSpotter, qN0 float64, sNorm []float64) int {
+
 	dist := 0.0
 	minD := 1e6
 	dRadius := 0.0
 	minDist := 10.0
 	winner := -1
 
-	// Matched filter matrix
-	DD := make([]float64, s.LengthSourceShingles)
-
-	// Perform the recursive Matched Filtering (core match algorithm)
-	for k := 0; k < s.LengthSourceShingles; k++ {
-		for l := 0; l < s.ShingleSize; l++ {
-			DD[k] += m.D[l][k+l] // Sum rest of k's diagonal up to W elements
-		}
+	G := make([][]float64, s.ShingleSize)
+	for dpp := 0; dpp < s.ShingleSize-1; dpp++ {
+		G[dpp] = s.dbShingles[dpp]
 	}
+	g := s.ShingleSize - 1
 
-	// DD now contains (1 x N) multi-dimensional matched filter output
-	for k := 0; k < s.LengthSourceShingles; k++ {
-		sk := sNorm[k]
-		if !(sk == NEGINF) {
+	// Make Correlation matrix entry for this frame against entire source database
+	for dpp := 0; dpp < s.LengthSourceShingles; dpp++ {
+
+		if dpp+s.ShingleSize-1 < s.LengthSourceShingles {
+			G[g] = s.dbShingles[dpp+s.ShingleSize-1]
+		} else {
+			G[g] = nil
+		}
+		g = (g + 1) % s.ShingleSize
+
+		DD := 0.0
+		for muxi := 0; muxi < s.ShingleSize; muxi++ {
+			y := (g + muxi) % s.ShingleSize
+			if G[y] == nil {
+				break
+			}
+			for _, qp := range s.ChosenFeatures {
+				DD += s.InShingles[muxi][qp] * G[y][qp]
+			}
+		}
+
+		sk := sNorm[dpp]
+		if sk != NEGINF {
 			// The norm matched filter distance  is the Euclidean distance between the vectors
-			dist = 2 - 2/(qN0*sk)*DD[k] // squared Euclidean distance
-			dRadius = math.Abs(dist)    // Distance from search radius
+			dist = 2 - 2/(qN0*sk)*DD // squared Euclidean distance
+			dRadius = math.Abs(dist) // Distance from search radius
 			// Perform min-dist search
 			if dRadius < minD { // prefer matches at front
 				minD = dRadius
 				minDist = dist
-				winner = k
+				winner = dpp
 			}
 		}
 	}
-	// FIX ME: the frame queue hash table logic is a bit off when queue sizes (or window sizes) change
-	if winner > -1 {
-		m.pushFrameQueue() // Hash down frame to hop boundary and queue
-	} else if m.frameQueue.Len() > 0 {
-		e := m.frameQueue.Front()
-		m.frameQueue.Remove(e)
-	}
 	dist = minDist
 	return winner
-}
-
-func (m *matcher) IncrementalCrossCorrelation(s *soundSpotter, muxi int) {
-	// Make Correlation matrix entry for this frame against entire source database
-	for dpp := 0; dpp < s.LengthSourceShingles; dpp++ {
-		coor := 0.0 // initialize correlation cell
-		for _, qp := range s.ChosenFeatures {
-			coor += s.InShingles[muxi][qp] * s.dbShingles[muxi+dpp][qp]
-		}
-		m.D[muxi][muxi+dpp] = coor
-	}
 }

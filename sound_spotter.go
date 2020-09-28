@@ -26,10 +26,6 @@ type soundSpotter struct {
 
 	ShingleSize int
 
-	Matcher *matcher // shingle matching algorithm
-
-	pwr_abs_thresh float64 // don't match below this threshold
-
 	CqtN int // number of constant-Q coefficients (automatic)
 }
 
@@ -40,7 +36,6 @@ func NewSoundSpotter(sampleRate int, dbBuf []float64, numFrames int64, cqtN int)
 	s := &soundSpotter{
 		ChosenFeatures: []int{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21},
 		ShingleSize:    50,
-		pwr_abs_thresh: 0.000001,
 		CqtN:           cqtN,
 	}
 
@@ -60,28 +55,7 @@ func NewSoundSpotter(sampleRate int, dbBuf []float64, numFrames int64, cqtN int)
 	s.dbBuf = dbBuf
 	s.LengthSourceShingles = int(math.Ceil(float64(numFrames) / (float64(Hop))))
 
-	// Cross-correlation matrix
-	D := make([][]float64, s.ShingleSize)
-	for i := 0; i < s.ShingleSize; i++ {
-		D[i] = make([]float64, s.LengthSourceShingles+s.ShingleSize-1)
-	}
-
-	matcher := &matcher{
-		D: D,
-	}
-	matcher.frameQueue.Init()
-	s.Matcher = matcher
-
 	return s
-}
-
-// Perform matching on shingle boundary
-func (s *soundSpotter) Match(inPower, qN0 float64, sNorm []float64) int {
-	if inPower > s.pwr_abs_thresh {
-		// matched filter matching to get winning database shingle
-		return s.Matcher.match(s, qN0, sNorm)
-	}
-	return -1
 }
 
 func (s *soundSpotter) Output(inPower float64, winner int) []float64 {
@@ -103,9 +77,4 @@ func (s *soundSpotter) Output(inPower float64, winner int) []float64 {
 		}
 	}
 	return outputBuffer
-}
-
-func (s *soundSpotter) SyncOnShingleStart() {
-	// update the power threshold data
-	s.Matcher.frameQueue.Init()
 }

@@ -155,7 +155,7 @@ func (e *featureExtractor) computeMFCC(outs1 []float64, fftwPlan *fftw.Plan, fft
 }
 
 // extract feature vectors from multichannel audio float buffer (allocate new vector memory)
-func (e *featureExtractor) ExtractSeriesOfVectors(fileName string, s *soundSpotter, fftIn *fftw.Array, fftN int,
+func (e *featureExtractor) ExtractSeriesOfVectors(fileName string, fftIn *fftw.Array, fftN int,
 	fftwPlan *fftw.Plan, fftOutN int, fftComplex *fftw.Array) error {
 
 	sf, err := NewSoundFile(fileName)
@@ -174,7 +174,7 @@ func (e *featureExtractor) ExtractSeriesOfVectors(fileName string, s *soundSpott
 
 	features := make([][]float64, frames)
 	for i := 0; i < frames; i++ {
-		features[i] = make([]float64, s.CqtN)
+		features[i] = make([]float64, e.CqtN)
 		buf := make([]float64, WindowLength)
 		for j := 0; j < WindowLength; j++ {
 			val := 0.0
@@ -201,7 +201,7 @@ func (e *featureExtractor) ExtractSeriesOfVectors(fileName string, s *soundSpott
 	}
 
 	for i := 0; i < frames; i++ {
-		b := make([]byte, 8*s.CqtN)
+		b := make([]byte, 8*e.CqtN)
 		for j, feature := range features[i] {
 			binary.LittleEndian.PutUint64(b[8*j:8+8*j], math.Float64bits(feature))
 		}

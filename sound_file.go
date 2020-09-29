@@ -5,8 +5,6 @@ import (
 	"github.com/mkb218/gosndfile/sndfile"
 )
 
-const SF_MAX_NUM_FRAMES = SS_MAX_DATABASE_SECS * SAMPLE_RATE
-
 type soundFile struct {
 	file   *sndfile.File
 	Frames int64
@@ -33,14 +31,17 @@ func NewSoundFile(fileName string) (*soundFile, error) {
 		panic("not mono input")
 	}
 	sf.Frames = info.Frames
-	if sf.Frames > SF_MAX_NUM_FRAMES {
-		sf.Frames = SF_MAX_NUM_FRAMES
-	}
+
 	return sf, nil
 }
 
 func (f *soundFile) ReadFrames(out interface{}) (read int64, err error) {
 	return f.file.ReadFrames(out)
+}
+
+//goland:noinspection GoStandardMethods
+func (f *soundFile) Seek(frames int64) (offset int64, err error) {
+	return f.file.Seek(frames, sndfile.Set)
 }
 
 func (f *soundFile) Close() error {

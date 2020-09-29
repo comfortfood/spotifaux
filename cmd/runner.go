@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/runningwild/go-fftw/fftw"
+	"math"
 	"os"
 	"spotifaux"
 )
@@ -30,10 +31,10 @@ func main() {
 
 	e := spotifaux.NewFeatureExtractor(spotifaux.SAMPLE_RATE, fftN, fftOutN)
 
-	s := spotifaux.NewSoundSpotter(spotifaux.SAMPLE_RATE, e.CqtN)
+	s := spotifaux.NewSoundSpotter(e.CqtN)
 
 	var err error
-	err = e.ExtractSeriesOfVectors(fileName, s, fftIn, fftN, fftwPlan, fftOutN, fftComplex)
+	err = e.ExtractSeriesOfVectors(fileName, fftIn, fftN, fftwPlan, fftOutN, fftComplex)
 	if err != nil {
 		panic(err)
 	}
@@ -42,6 +43,12 @@ func main() {
 	inputSamps := make([]float64, spotifaux.WindowLength)
 
 	wav := spotifaux.NewWavWriter("out.wav")
+
+	sf, err := spotifaux.NewSoundFile("/Users/wyatttall/git/spotifaux/db/slidingdown-16kHz.wav")
+	if err != nil {
+		panic(err)
+	}
+	defer sf.Close()
 
 	breakNext := false
 	iter := 0
@@ -57,11 +64,17 @@ func main() {
 
 		for ; nn < (spotifaux.Hop*(s.ShingleSize-1) + spotifaux.WindowLength); nn++ {
 			f, err := inputSrc.Float64()
-			rawInputSamps[nn] = f
+			rawInputSamps[nn] = f // will zero out when err != nil
 			if err != nil {
 				breakNext = true
 			}
 		}
+
+		inPower := 0.0
+		for nn := 0; nn < spotifaux.Hop*s.ShingleSize; nn++ {
+			inPower += math.Pow(rawInputSamps[nn], 2)
+		}
+		inPower /= float64(spotifaux.Hop * s.ShingleSize)
 
 		for muxi := 0; muxi < s.ShingleSize; muxi++ {
 			for nn := 0; nn < spotifaux.WindowLength; nn++ {
@@ -77,7 +90,11 @@ func main() {
 			panic(err)
 		}
 		fmt.Printf("%d ", winner)
-		//wav.WriteItems(s.Output(s.InPowers[0], winner))
+		output, err := s.Output(sf, winner, inPower)
+		if err != nil {
+			panic(err)
+		}
+		wav.WriteItems(output)
 		iter++
 	}
 

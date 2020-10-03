@@ -5,12 +5,11 @@ import (
 	"github.com/runningwild/go-fftw/fftw"
 	"math"
 	"os"
-	"strings"
 )
 
 const CQ_ENV_THRESH = 0.001
 
-type featureExtractor struct {
+type FeatureExtractor struct {
 	bpoN       int       // constant-Q bands per octave (user)
 	CqtN       int       // number of constant-Q coefficients (automatic)
 	CQT        []float64 // constant-Q transform coefficients
@@ -19,11 +18,27 @@ type featureExtractor struct {
 	DCT        []float64 // discrete cosine transform coefficients
 	hammingWin []float64
 	winNorm    float64 // Hamming window normalization factor
+	fftN       int
+	fftOutN    int
+	fftIn      *fftw.Array
+	fftComplex *fftw.Array
+	fftwPlan   *fftw.Plan
 }
 
-func NewFeatureExtractor(sampleRate, fftN, fftOutN int) *featureExtractor {
-	e := &featureExtractor{
-		bpoN: 12,
+func NewFeatureExtractor(sampleRate int) *FeatureExtractor {
+
+	fftN := SS_FFT_LENGTH // linear frequency resolution (FFT) (user)
+	fftOutN := fftN/2 + 1 // linear frequency power spectrum values (automatic)
+	fftIn := fftw.NewArray(fftN)
+	fftComplex := fftw.NewArray(fftOutN)
+
+	e := &FeatureExtractor{
+		bpoN:       12,
+		fftN:       fftN,
+		fftOutN:    fftOutN,
+		fftIn:      fftIn,      // storage for FFT input
+		fftComplex: fftComplex, // storage for FFT output
+		fftwPlan:   fftw.NewPlan(fftIn, fftComplex, fftw.Forward, fftw.Estimate),
 	}
 
 	// Construct transform coefficients
@@ -35,7 +50,7 @@ func NewFeatureExtractor(sampleRate, fftN, fftOutN int) *featureExtractor {
 }
 
 // FFT Hamming window
-func (e *featureExtractor) makeHammingWin() {
+func (e *FeatureExtractor) makeHammingWin() {
 	e.hammingWin = make([]float64, WindowLength)
 	sum := 0.0
 	for i := 0; i < WindowLength; i++ {
@@ -46,7 +61,7 @@ func (e *featureExtractor) makeHammingWin() {
 	e.winNorm = 1.0 / (math.Sqrt(sum * float64(WindowLength)))
 }
 
-func (e *featureExtractor) makeLogFreqMap(sampleRate, fftN, fftOutN int) {
+func (e *FeatureExtractor) makeLogFreqMap(sampleRate, fftN, fftOutN int) {
 	loEdge := 125.0                              // changed from 55.0 * math.Pow(2.0, 2.5/12.0) // low C minus quarter tone
 	hiEdge := 7500.0                             // changed from 8000.0
 	fratio := math.Pow(2.0, 1.0/float64(e.bpoN)) // Constant-Q bandwidth
@@ -103,7 +118,7 @@ func (e *featureExtractor) makeLogFreqMap(sampleRate, fftN, fftOutN int) {
 }
 
 // discrete cosine transform
-func (e *featureExtractor) makeDCT() {
+func (e *FeatureExtractor) makeDCT() {
 
 	nm := 1 / math.Sqrt(float64(e.CqtN)/2.0)
 
@@ -120,45 +135,10 @@ func (e *featureExtractor) makeDCT() {
 	}
 }
 
-func (e *featureExtractor) computeMFCC(outs1 []float64, fftwPlan *fftw.Plan, fftOutN int, fftComplex *fftw.Array) {
-
-	fftwPlan.Execute()
-
-	// Compute linear power spectrum
-	fftPowerSpectrum := make([]float64, fftOutN) // storage for FFT power spectrum
-	for i := 0; i < fftOutN; i++ {
-		x := real(fftComplex.At(i))     // Real
-		y := imag(fftComplex.At(i))     // Imaginary
-		fftPowerSpectrum[i] = x*x + y*y // Power
-	}
-
-	cqtOut := make([]float64, e.CqtN)
-	// sparse matrix product of CQT * FFT
-	for i := 0; i < e.CqtN; i++ {
-		cqtOut[i] = 0.0
-		for j := 0; j < (e.cqStop[i] - e.cqStart[i]); j++ {
-			cqtOut[i] += e.CQT[i*fftOutN+e.cqStart[i]+j] * fftPowerSpectrum[e.cqStart[i]+j]
-		}
-	}
-
-	// LFCC ( in-place )
-	for i := 0; i < e.CqtN; i++ {
-		cqtOut[i] = math.Log10(cqtOut[i])
-	}
-
-	for i := 0; i < e.CqtN; i++ {
-		outs1[i] = 0.0
-		for j := 0; j < e.CqtN; j++ {
-			outs1[i] += cqtOut[j] * e.DCT[i*e.CqtN+j]
-		}
-	}
-}
-
 // extract feature vectors from multichannel audio float buffer (allocate new vector memory)
-func (e *featureExtractor) ExtractSeriesOfVectors(fileName string, fftIn *fftw.Array, fftN int,
-	fftwPlan *fftw.Plan, fftOutN int, fftComplex *fftw.Array) error {
+func (e *FeatureExtractor) ExtractSeriesOfVectors(wavFileName, datFileName string) error {
 
-	sf, err := NewSoundFile(fileName)
+	sf, err := NewSoundFile(wavFileName)
 	if err != nil {
 		return err
 	}
@@ -184,10 +164,64 @@ func (e *featureExtractor) ExtractSeriesOfVectors(fileName string, fftIn *fftw.A
 			buf[j] = val
 		}
 
-		e.ExtractVector(buf, features[i], fftIn, fftN, fftwPlan, fftOutN, fftComplex)
+		e.extractVector(buf, features[i])
 	}
 
-	f, err := os.Create(fileName[0:strings.LastIndex(fileName, ".")] + ".dat")
+	return writeFeatures(datFileName, frames, e.CqtN, features)
+}
+
+// extract feature vectors from MONO input buffer
+func (e *FeatureExtractor) extractVector(buf, outputFeatures []float64) {
+
+	j := 0
+	for ; j < WindowLength; j++ {
+		val := buf[j]
+		e.fftIn.Set(j, complex(val*e.hammingWin[j]*e.winNorm, 0))
+	}
+	// zero pad the rest of the FFT window
+	for ; j < e.fftN; j++ {
+		e.fftIn.Set(j, 0)
+	}
+	e.computeMFCC(outputFeatures) // extract MFCC and place result in outputFeatures
+}
+
+func (e *FeatureExtractor) computeMFCC(outs1 []float64) {
+
+	e.fftwPlan.Execute()
+
+	// Compute linear power spectrum
+	fftPowerSpectrum := make([]float64, e.fftOutN) // storage for FFT power spectrum
+	for i := 0; i < e.fftOutN; i++ {
+		x := real(e.fftComplex.At(i))   // Real
+		y := imag(e.fftComplex.At(i))   // Imaginary
+		fftPowerSpectrum[i] = x*x + y*y // Power
+	}
+
+	cqtOut := make([]float64, e.CqtN)
+	// sparse matrix product of CQT * FFT
+	for i := 0; i < e.CqtN; i++ {
+		cqtOut[i] = 0.0
+		for j := 0; j < (e.cqStop[i] - e.cqStart[i]); j++ {
+			cqtOut[i] += e.CQT[i*e.fftOutN+e.cqStart[i]+j] * fftPowerSpectrum[e.cqStart[i]+j]
+		}
+	}
+
+	// LFCC ( in-place )
+	for i := 0; i < e.CqtN; i++ {
+		cqtOut[i] = math.Log10(cqtOut[i])
+	}
+
+	for i := 0; i < e.CqtN; i++ {
+		outs1[i] = 0.0
+		for j := 0; j < e.CqtN; j++ {
+			outs1[i] += cqtOut[j] * e.DCT[i*e.CqtN+j]
+		}
+	}
+}
+
+func writeFeatures(datFileName string, frames, numFeatures int, features [][]float64) error {
+
+	f, err := os.Create(datFileName)
 	if err != nil {
 		return err
 	}
@@ -201,7 +235,7 @@ func (e *featureExtractor) ExtractSeriesOfVectors(fileName string, fftIn *fftw.A
 	}
 
 	for i := 0; i < frames; i++ {
-		b := make([]byte, 8*e.CqtN)
+		b := make([]byte, 8*numFeatures)
 		for j, feature := range features[i] {
 			binary.LittleEndian.PutUint64(b[8*j:8+8*j], math.Float64bits(feature))
 		}
@@ -210,22 +244,5 @@ func (e *featureExtractor) ExtractSeriesOfVectors(fileName string, fftIn *fftw.A
 			return err
 		}
 	}
-
 	return nil
-}
-
-// extract feature vectors from MONO input buffer
-func (e *featureExtractor) ExtractVector(buf, outputFeatures []float64, fftIn *fftw.Array,
-	fftN int, fftwPlan *fftw.Plan, fftOutN int, fftComplex *fftw.Array) {
-
-	j := 0
-	for ; j < WindowLength; j++ {
-		val := buf[j]
-		fftIn.Set(j, complex(val*e.hammingWin[j]*e.winNorm, 0))
-	}
-	// zero pad the rest of the FFT window
-	for ; j < fftN; j++ {
-		fftIn.Set(j, 0)
-	}
-	e.computeMFCC(outputFeatures, fftwPlan, fftOutN, fftComplex) // extract MFCC and place result in outputFeatures
 }

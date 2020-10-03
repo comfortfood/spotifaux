@@ -5,16 +5,16 @@ import (
 	"github.com/mkb218/gosndfile/sndfile"
 )
 
-type soundFile struct {
+type SoundFile struct {
 	file   *sndfile.File
 	Frames int64
 }
 
 // Attempt to open sound file
-// return -1 if cannot open soundFile
+// return -1 if cannot open SoundFile
 // else return number of frames read
-func NewSoundFile(fileName string) (*soundFile, error) {
-	sf := &soundFile{}
+func NewSoundFile(fileName string) (*SoundFile, error) {
+	sf := &SoundFile{}
 
 	// Open sound file
 	info := &sndfile.Info{}
@@ -35,15 +35,15 @@ func NewSoundFile(fileName string) (*soundFile, error) {
 	return sf, nil
 }
 
-func (f *soundFile) ReadFrames(out interface{}) (read int64, err error) {
+func (f *SoundFile) ReadFrames(out interface{}) (read int64, err error) {
 	return f.file.ReadFrames(out)
 }
 
 //goland:noinspection GoStandardMethods
-func (f *soundFile) Seek(frames int64) (offset int64, err error) {
+func (f *SoundFile) Seek(frames int64) (offset int64, err error) {
 	return f.file.Seek(frames, sndfile.Set)
 }
 
-func (f *soundFile) Close() error {
+func (f *SoundFile) Close() error {
 	return f.file.Close()
 }

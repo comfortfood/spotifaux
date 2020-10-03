@@ -2,7 +2,6 @@ package spotifaux
 
 import (
 	"math"
-	"strings"
 )
 
 // Matching algorithm using recursive matched filter algorithm
@@ -16,9 +15,9 @@ import (
 // Substantially Modified: Michael A. Casey, August 24th - 27th 2007
 // Factored out dependency on SoundSpotter class, August 8th - 9th 2009
 // Added power features for threshold tests
-func Match(fileName string, s *soundSpotter) (int, float64, error) {
+func Match(datFileName string, s *SoundSpotter) (int, float64, error) {
 
-	dr, err := NewDatReader(fileName[0:strings.LastIndex(fileName, ".")]+".dat", s.CqtN)
+	dr, err := NewDatReader(datFileName, s.CqtN)
 	if err != nil {
 		return 0, 0.0, err
 	}

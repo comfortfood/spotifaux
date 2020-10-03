@@ -1,112 +1,282 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/runningwild/go-fftw/fftw"
+	"github.com/faiface/beep"
+	"github.com/faiface/beep/effects"
+	"github.com/faiface/beep/mp3"
+	"github.com/faiface/beep/wav"
+	"io"
+	"io/ioutil"
+	"log"
 	"math"
 	"os"
 	"spotifaux"
+	"strings"
 )
 
 func main() {
-	var fileName string
+	var dbDirname string
 	if len(os.Args) > 1 {
-		fileName = os.Args[1]
+		dbDirname = os.Args[1]
 	} else {
-		fileName = "/Users/wyatttall/git/spotifaux/db/slidingdown-16kHz.wav"
+		dbDirname = "/Users/wyatttall/git/spotifaux/db"
 	}
-	var inputSrc spotifaux.Source
-	//inputSrc = newFixedSource("/Users/wyatttall/git/BLAST/soundspotter/out")
-	inputSrc = spotifaux.NewWavSource()
+	sourceWavFileName := "/Users/wyatttall/git/spotifaux/recreate/all-short.wav"
 
-	fftN := spotifaux.SS_FFT_LENGTH // linear frequency resolution (FFT) (user)
-	fftOutN := fftN/2 + 1           // linear frequency power spectrum values (automatic)
-
-	// FFTW memory allocation
-	fftIn := fftw.NewArray(fftN)         // storage for FFT input
-	fftComplex := fftw.NewArray(fftOutN) // storage for FFT output
-
-	// FFTW plan caching
-	fftwPlan := fftw.NewPlan(fftIn, fftComplex, fftw.Forward, fftw.Estimate)
-
-	e := spotifaux.NewFeatureExtractor(spotifaux.SAMPLE_RATE, fftN, fftOutN)
-
+	e := spotifaux.NewFeatureExtractor(spotifaux.SAMPLE_RATE)
 	s := spotifaux.NewSoundSpotter(e.CqtN)
 
-	var err error
-	err = e.ExtractSeriesOfVectors(fileName, fftIn, fftN, fftwPlan, fftOutN, fftComplex)
+	//dbMp3sToWavs(dbDirname)
+	dbWavsToDats(dbDirname, e)
+
+	err := e.ExtractSeriesOfVectors(sourceWavFileName, toDat(sourceWavFileName))
 	if err != nil {
 		panic(err)
 	}
 
-	rawInputSamps := make([]float64, spotifaux.Hop*(s.ShingleSize-1)+spotifaux.WindowLength)
-	inputSamps := make([]float64, spotifaux.WindowLength)
+	sourceToRecipe(toDat(sourceWavFileName), s, dbDirname)
+	recipeToOutput(sourceWavFileName, s)
+}
 
-	wav := spotifaux.NewWavWriter("out.wav")
+func dbMp3sToWavs(dirname string) {
+	files, err := ioutil.ReadDir(dirname)
+	if err != nil {
+		panic(err)
+	}
 
-	sf, err := spotifaux.NewSoundFile("/Users/wyatttall/git/spotifaux/db/slidingdown-16kHz.wav")
+	for i, fi := range files {
+		if strings.HasSuffix(fi.Name(), ".mp3") {
+			fmt.Printf("%d of %d %s to wav\n", i, len(files), fi.Name())
+
+			f, err := os.Open(dirname + "/" + fi.Name())
+			if err != nil {
+				panic(err)
+			}
+
+			streamer, _, err := mp3.Decode(f)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			monoStreamer := effects.Mono(streamer)
+
+			out, err := os.Create(dirname + "/" + fi.Name()[0:strings.LastIndex(fi.Name(), ".")] + ".wav")
+			if err != nil {
+				panic(err)
+			}
+
+			r := beep.Resample(6, beep.SampleRate(48000), beep.SampleRate(16000), monoStreamer)
+
+			err = wav.Encode(out, r, beep.Format{
+				SampleRate:  beep.SampleRate(16000),
+				NumChannels: 1,
+				Precision:   1,
+			})
+			if err != nil {
+				panic(err)
+			}
+
+			streamer.Close()
+			f.Close()
+			out.Close()
+		}
+	}
+}
+
+func dbWavsToDats(dirname string, e *spotifaux.FeatureExtractor) {
+
+	files, err := ioutil.ReadDir(dirname)
+	if err != nil {
+		panic(err)
+	}
+
+	for i, fi := range files {
+		if strings.HasSuffix(fi.Name(), ".wav") {
+			fmt.Printf("%d of %d %s to dat\n", i, len(files), fi.Name())
+
+			err = e.ExtractSeriesOfVectors(dirname+"/"+fi.Name(), toDat(dirname+"/"+fi.Name()))
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+}
+
+func toDat(fileName string) string {
+	return fileName[0:strings.LastIndex(fileName, ".")] + ".dat"
+}
+
+func sourceToRecipe(sourceDatFileName string, s *spotifaux.SoundSpotter, dirName string) {
+
+	recipe, err := os.Create("recipe.json")
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = recipe.WriteString("{\"recipe\":[\n")
+	if err != nil {
+		panic(err)
+	}
+
+	source, err := spotifaux.NewDatReader(sourceDatFileName, s.CqtN)
+	if err != nil {
+		panic(err)
+	}
+
+	last := false
+	for iter := 0; ; iter++ {
+		for muxi := 0; muxi < s.ShingleSize; muxi++ {
+			s.InShingles[muxi], err = source.Dat()
+			if err == io.EOF {
+				s.InShingles[muxi] = make([]float64, s.CqtN)
+				last = true
+			} else if err != nil {
+				panic(err)
+			}
+		}
+
+		// matched filter matching to get winning database shingle
+		fileName, winner, err := getWinner(dirName, s)
+		if err != nil {
+			panic(err)
+		}
+
+		fmt.Printf("%d %s %d\n", iter, fileName[strings.LastIndex(fileName, "/")+1:], winner)
+
+		maybeComma := ","
+		if last {
+			maybeComma = ""
+		}
+
+		w := fmt.Sprintf("{\"filename\":\"%s\",\"Winner\":%d}%s\n", fileName, winner, maybeComma)
+		_, err = recipe.WriteString(w)
+		if err != nil {
+			panic(err)
+		}
+
+		if last {
+			break
+		}
+	}
+
+	_, err = recipe.WriteString("]}")
+	if err != nil {
+		panic(err)
+	}
+	err = recipe.Close()
+	if err != nil {
+		panic(err)
+	}
+	err = source.Close()
+	if err != nil {
+		panic(err)
+	}
+}
+
+func getWinner(dirName string, s *spotifaux.SoundSpotter) (string, int, error) {
+
+	files, err := ioutil.ReadDir(dirName)
+	if err != nil {
+		return "", 0, err
+	}
+
+	fileName := ""
+	winner := -1
+	minDist := 10.0
+	for i, fi := range files {
+		if strings.HasSuffix(fi.Name(), ".wav") {
+
+			if i%15 == 0 {
+				fmt.Printf("  %d of %d %s\n", i, len(files), fi.Name())
+			}
+
+			w, dist, err := spotifaux.Match(toDat(dirName+"/"+fi.Name()), s)
+			if err != nil {
+				return "", 0, err
+			}
+
+			if dist < minDist {
+				fileName = dirName + "/" + fi.Name()
+				winner = w
+				minDist = dist
+			}
+		}
+	}
+	return fileName, winner, nil
+}
+
+type Winner struct {
+	Filename string `json:"filename"`
+	Winner   int    `json:"winner"`
+}
+
+type Recipe struct {
+	Winner []Winner `json:"recipe"`
+}
+
+func recipeToOutput(sourceWavFileName string, s *spotifaux.SoundSpotter) {
+
+	sf, err := spotifaux.NewSoundFile(sourceWavFileName)
 	if err != nil {
 		panic(err)
 	}
 	defer sf.Close()
 
-	breakNext := false
-	iter := 0
-	for {
-		if breakNext {
-			break
-		}
+	recipe := readRecipe()
 
-		nn := 0
-		for ; iter > 0 && nn < spotifaux.WindowLength-spotifaux.Hop; nn++ {
-			rawInputSamps[nn] = rawInputSamps[spotifaux.Hop*s.ShingleSize+nn]
-		}
+	wavWriter := spotifaux.NewWavWriter("out.wav")
+	defer wavWriter.Close()
 
-		for ; nn < (spotifaux.Hop*(s.ShingleSize-1) + spotifaux.WindowLength); nn++ {
-			f, err := inputSrc.Float64()
-			rawInputSamps[nn] = f // will zero out when err != nil
-			if err != nil {
-				breakNext = true
-			}
-		}
+	for _, winner := range recipe.Winner {
 
-		inPower := 0.0
-		for nn := 0; nn < spotifaux.Hop*s.ShingleSize; nn++ {
-			inPower += math.Pow(rawInputSamps[nn], 2)
-		}
-		inPower /= float64(spotifaux.Hop * s.ShingleSize)
-
-		for muxi := 0; muxi < s.ShingleSize; muxi++ {
-			for nn := 0; nn < spotifaux.WindowLength; nn++ {
-				inputSamps[nn] = rawInputSamps[muxi*spotifaux.Hop+nn]
-			}
-			// inputSamps holds the audio samples, convert inputSamps to outputFeatures (FFT buffer)
-			e.ExtractVector(inputSamps, s.InShingles[muxi], fftIn, fftN, fftwPlan, fftOutN, fftComplex)
-		}
-
-		// matched filter matching to get winning database shingle
-		winner, _, err := spotifaux.Match(fileName, s)
+		inPower, err := getInPower(sf, spotifaux.Hop*s.ShingleSize)
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("%d ", winner)
-		output, err := s.Output(sf, winner, inPower)
+
+		output, err := s.Output(winner.Filename, winner.Winner, inPower)
 		if err != nil {
 			panic(err)
 		}
-		wav.WriteItems(output)
-		iter++
+		wavWriter.WriteItems(output)
 	}
+}
 
-	fmt.Printf("\n%d", iter)
+func readRecipe() Recipe {
+	recipeFile, err := os.Open("recipe.json")
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer recipeFile.Close()
 
-	err = inputSrc.Close()
+	byteValues, err := ioutil.ReadAll(recipeFile)
 	if err != nil {
 		panic(err)
 	}
 
-	err = wav.Close()
+	var recipe Recipe
+	err = json.Unmarshal(byteValues, &recipe)
 	if err != nil {
 		panic(err)
 	}
+	return recipe
+}
+
+func getInPower(sf *spotifaux.SoundFile, bufLength int) (float64, error) {
+
+	buf := make([]float64, bufLength)
+	read, err := sf.ReadFrames(buf)
+	if err != nil {
+		return 0, err
+	}
+
+	inPower := 0.0
+	for nn := 0; nn < int(read); nn++ {
+		inPower += math.Pow(buf[nn], 2)
+	}
+	inPower /= float64(bufLength)
+
+	return inPower, nil
 }

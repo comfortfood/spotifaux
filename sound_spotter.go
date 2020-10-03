@@ -8,25 +8,21 @@ const WindowLength = 400
 const Hop = 160
 const SAMPLE_RATE = 16000
 
-type soundSpotter struct {
-	sampleRate int
-	InShingles [][]float64
-
+type SoundSpotter struct {
 	ChosenFeatures []int
-
-	ShingleSize int
-
-	CqtN int // number of constant-Q coefficients (automatic)
+	CqtN           int // number of constant-Q coefficients (automatic)
+	InShingles     [][]float64
+	ShingleSize    int
 }
 
 // multi-channel soundspotter
 // expects MONO input and possibly multi-channel DATABASE audio output
-func NewSoundSpotter(cqtN int) *soundSpotter {
+func NewSoundSpotter(cqtN int) *SoundSpotter {
 
-	s := &soundSpotter{
+	s := &SoundSpotter{
 		ChosenFeatures: []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
-		ShingleSize:    25,
 		CqtN:           cqtN,
+		ShingleSize:    29,
 	}
 
 	s.InShingles = make([][]float64, s.ShingleSize)
@@ -37,13 +33,19 @@ func NewSoundSpotter(cqtN int) *soundSpotter {
 	return s
 }
 
-func (s *soundSpotter) Output(sf *soundFile, winner int, inPower float64) ([]float64, error) {
+func (s *SoundSpotter) Output(fileName string, winner int, inPower float64) ([]float64, error) {
 
 	outputLength := Hop * s.ShingleSize
 	outputBuffer := make([]float64, outputLength) // fix size at constructor ?
 	if winner > -1 {
 
-		_, err := sf.Seek(int64(winner * Hop))
+		sf, err := NewSoundFile(fileName)
+		if err != nil {
+			panic(err)
+		}
+		defer sf.Close()
+
+		_, err = sf.Seek(int64(winner * Hop))
 		if err != nil {
 			return nil, err
 		}

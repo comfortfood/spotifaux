@@ -8,12 +8,12 @@ type wavWriter struct {
 	f *sndfile.File
 }
 
-func NewWavWriter(filename string) *wavWriter {
+func NewWavWriter(fileName string) *wavWriter {
 	var i sndfile.Info
 	i.Format = sndfile.SF_FORMAT_WAV | sndfile.SF_FORMAT_PCM_16
 	i.Channels = 1
 	i.Samplerate = SAMPLE_RATE
-	f, err := sndfile.Open(filename, sndfile.Write, &i)
+	f, err := sndfile.Open(fileName, sndfile.Write, &i)
 	if err != nil {
 		panic(err)
 	}

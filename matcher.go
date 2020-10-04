@@ -17,25 +17,11 @@ import (
 // Added power features for threshold tests
 func Match(wavFileName, datFileName string, s *SoundSpotter) ([]Winner, error) {
 
-	dr, err := NewDatReader(datFileName, s.CqtN)
-	if err != nil {
-		return nil, err
-	}
-
 	x := len(s.InShingles) / s.ShingleSize
 	if len(s.InShingles)%s.ShingleSize > 0 {
 		x++
 	}
 	fileWinners := make([]Winner, x)
-
-	front := 0
-	dbShingles := make([][]float64, s.ShingleSize)
-	for dpp := 0; dpp < s.ShingleSize; dpp++ {
-		dbShingles[dpp], err = dr.Dat()
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	qN := make([]float64, x)
 	for ins := 0; ins < x; ins++ {
@@ -46,6 +32,20 @@ func Match(wavFileName, datFileName string, s *SoundSpotter) ([]Winner, error) {
 			}
 		}
 		qN[ins] = math.Sqrt(qN[ins])
+	}
+
+	dr, err := NewDatReader(datFileName, s.CqtN)
+	if err != nil {
+		return nil, err
+	}
+
+	front := 0
+	dbShingles := make([][]float64, s.ShingleSize)
+	for dpp := 0; dpp < s.ShingleSize; dpp++ {
+		dbShingles[dpp], err = dr.Dat()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Make Correlation matrix entry for this frame against entire source database
@@ -72,9 +72,9 @@ func Match(wavFileName, datFileName string, s *SoundSpotter) ([]Winner, error) {
 			// Perform min-dist search
 			if (fileWinners[ins] == Winner{}) || dRadius < fileWinners[ins].MinDist {
 				fileWinners[ins] = Winner{
-					Filename: wavFileName,
-					MinDist:  dRadius,
-					Winner:   dpp,
+					File:    wavFileName,
+					MinDist: dRadius,
+					Winner:  dpp,
 				}
 			}
 		}

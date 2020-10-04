@@ -1,9 +1,9 @@
 package spotifaux
 
 type Winner struct {
-	Filename string `json:"filename"`
-	Winner   int    `json:"winner"`
-	MinDist  float64
+	File    string `json:"file"`
+	Winner  int    `json:"winner"`
+	MinDist float64
 }
 
 type Recipe struct {

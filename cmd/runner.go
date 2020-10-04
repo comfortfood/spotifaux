@@ -16,35 +16,38 @@ import (
 	"strings"
 )
 
-func main() {
-	var dbDirname string
+func getDBDirname() string {
 	if len(os.Args) > 1 {
-		dbDirname = os.Args[1]
+		return os.Args[1]
 	} else {
-		dbDirname = "/Users/wyatttall/git/spotifaux/The Beatles"
+		return "/Users/wyatttall/git/spotifaux/The Beatles"
 	}
-	sourceWavFileName := "/Users/wyatttall/git/spotifaux/recreate/all-short.wav"
+}
+
+func main() {
+	sourceWavFileName := "/Users/wyatttall/git/spotifaux/recreate/this-is-short.wav"
 
 	e := spotifaux.NewFeatureExtractor(spotifaux.SAMPLE_RATE)
 	s := &spotifaux.SoundSpotter{
 		ChosenFeatures: []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
 		CqtN:           e.CqtN,
-		ShingleSize:    29,
+		ShingleSize:    11,
 	}
 
-	//dbMp3sToWavs(dbDirname)
-	//dbWavsToDats(dbDirname, e)
+	//dbMp3sToWavs()
+	//dbWavsToDats(e)
 
 	//err := e.ExtractSeriesOfVectors(sourceWavFileName, toDat(sourceWavFileName))
 	//if err != nil {
 	//	panic(err)
 	//}
 
-	sourceDatToRecipe(toDat(sourceWavFileName), s, dbDirname)
+	//sourceDatToRecipe(toDat(sourceWavFileName), s)
 	recipeToOutput(sourceWavFileName, s)
 }
 
-func dbMp3sToWavs(dirname string) {
+func dbMp3sToWavs() {
+	dirname := getDBDirname()
 	files, err := ioutil.ReadDir(dirname)
 	if err != nil {
 		panic(err)
@@ -89,8 +92,9 @@ func dbMp3sToWavs(dirname string) {
 	}
 }
 
-func dbWavsToDats(dirname string, e *spotifaux.FeatureExtractor) {
+func dbWavsToDats(e *spotifaux.FeatureExtractor) {
 
+	dirname := getDBDirname()
 	files, err := ioutil.ReadDir(dirname)
 	if err != nil {
 		panic(err)
@@ -112,7 +116,7 @@ func toDat(fileName string) string {
 	return fileName[0:strings.LastIndex(fileName, ".")] + ".dat"
 }
 
-func sourceDatToRecipe(sourceDatFileName string, s *spotifaux.SoundSpotter, dirName string) {
+func sourceDatToRecipe(sourceDatFileName string, s *spotifaux.SoundSpotter) {
 
 	source, err := spotifaux.NewDatReader(sourceDatFileName, s.CqtN)
 	if err != nil {
@@ -150,7 +154,7 @@ func sourceDatToRecipe(sourceDatFileName string, s *spotifaux.SoundSpotter, dirN
 	}
 	defer recipe.Close()
 
-	winners, err := getWinners(dirName, s)
+	winners, err := getWinners(s)
 	if err != nil {
 		panic(err)
 	}
@@ -161,7 +165,7 @@ func sourceDatToRecipe(sourceDatFileName string, s *spotifaux.SoundSpotter, dirN
 			maybeComma = ""
 		}
 
-		w := fmt.Sprintf("{\"filename\":\"%s\",\"Winner\":%d}%s\n", winner.Filename, winner.Winner, maybeComma)
+		w := fmt.Sprintf("{\"file\":\"%s\",\"winner\":%d}%s\n", winner.File, winner.Winner, maybeComma)
 		_, err = recipe.WriteString(w)
 		if err != nil {
 			panic(err)
@@ -174,9 +178,10 @@ func sourceDatToRecipe(sourceDatFileName string, s *spotifaux.SoundSpotter, dirN
 	}
 }
 
-func getWinners(dirName string, s *spotifaux.SoundSpotter) ([]spotifaux.Winner, error) {
+func getWinners(s *spotifaux.SoundSpotter) ([]spotifaux.Winner, error) {
 
-	files, err := ioutil.ReadDir(dirName)
+	dirname := getDBDirname()
+	files, err := ioutil.ReadDir(dirname)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +196,7 @@ func getWinners(dirName string, s *spotifaux.SoundSpotter) ([]spotifaux.Winner, 
 
 			fmt.Printf("  %d of %d %s\n", i, len(files), fi.Name())
 
-			wavFileName := dirName + "/" + fi.Name()
+			wavFileName := dirname + "/" + fi.Name()
 			fileWinners, err := spotifaux.Match(wavFileName, toDat(wavFileName), s)
 			if err != nil {
 				return nil, err
@@ -227,7 +232,7 @@ func recipeToOutput(sourceWavFileName string, s *spotifaux.SoundSpotter) {
 			panic(err)
 		}
 
-		output, err := s.Output(winner.Filename, winner.Winner, inPower)
+		output, err := s.Output(winner.File, winner.Winner, inPower)
 		if err != nil {
 			panic(err)
 		}

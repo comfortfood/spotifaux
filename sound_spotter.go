@@ -15,24 +15,6 @@ type SoundSpotter struct {
 	ShingleSize    int
 }
 
-// multi-channel soundspotter
-// expects MONO input and possibly multi-channel DATABASE audio output
-func NewSoundSpotter(cqtN int) *SoundSpotter {
-
-	s := &SoundSpotter{
-		ChosenFeatures: []int{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
-		CqtN:           cqtN,
-		ShingleSize:    29,
-	}
-
-	s.InShingles = make([][]float64, s.ShingleSize)
-	for i := 0; i < s.ShingleSize; i++ {
-		s.InShingles[i] = make([]float64, s.CqtN)
-	}
-
-	return s
-}
-
 func (s *SoundSpotter) Output(fileName string, winner int, inPower float64) ([]float64, error) {
 
 	outputLength := Hop * s.ShingleSize

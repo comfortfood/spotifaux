@@ -8,7 +8,7 @@ import (
 
 type datReader struct {
 	f      *os.File
-	frames int
+	Frames int
 	cqtN   int
 }
 
@@ -28,7 +28,7 @@ func NewDatReader(fileName string, cqtN int) (*datReader, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.frames = int(binary.LittleEndian.Uint64(fb))
+	r.Frames = int(binary.LittleEndian.Uint64(fb))
 
 	return r, nil
 }

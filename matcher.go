@@ -15,72 +15,79 @@ import (
 // Substantially Modified: Michael A. Casey, August 24th - 27th 2007
 // Factored out dependency on SoundSpotter class, August 8th - 9th 2009
 // Added power features for threshold tests
-func Match(datFileName string, s *SoundSpotter) (int, float64, error) {
+func Match(wavFileName, datFileName string, s *SoundSpotter) ([]Winner, error) {
 
 	dr, err := NewDatReader(datFileName, s.CqtN)
 	if err != nil {
-		return 0, 0.0, err
+		return nil, err
 	}
 
-	dist := 0.0
-	minD := 1e6
-	dRadius := 0.0
-	minDist := 10.0
-	winner := -1
-
-	qN0 := 0.0 // TODO: more efficient with a SeriesSum
-	for muxi := 0; muxi < s.ShingleSize; muxi++ {
-		for _, qp := range s.ChosenFeatures {
-			qN0 += s.InShingles[muxi][qp] * s.InShingles[muxi][qp]
-		}
+	x := len(s.InShingles) / s.ShingleSize
+	if len(s.InShingles)%s.ShingleSize > 0 {
+		x++
 	}
-	qN0 = math.Sqrt(qN0)
+	fileWinners := make([]Winner, x)
 
 	front := 0
 	dbShingles := make([][]float64, s.ShingleSize)
 	for dpp := 0; dpp < s.ShingleSize; dpp++ {
 		dbShingles[dpp], err = dr.Dat()
 		if err != nil {
-			return 0, 0.0, err
+			return nil, err
 		}
 	}
 
-	// Make Correlation matrix entry for this frame against entire source database
-	for dpp := 0; dpp < dr.frames; dpp++ {
-
-		sk := 0.0 // TODO: more efficient with a SeriesSum
-		DD := 0.0
+	qN := make([]float64, x)
+	for ins := 0; ins < x; ins++ {
 		for muxi := 0; muxi < s.ShingleSize; muxi++ {
-			m := (front + muxi) % s.ShingleSize
-			if dbShingles[m] == nil {
-				break
-			}
 			for _, qp := range s.ChosenFeatures {
-				sk += dbShingles[m][qp] * dbShingles[m][qp]
-				DD += s.InShingles[muxi][qp] * dbShingles[m][qp]
+				feature := s.InShingles[ins*s.ShingleSize+muxi][qp]
+				qN[ins] += feature * feature
 			}
 		}
-		sk = math.Sqrt(sk)
+		qN[ins] = math.Sqrt(qN[ins])
+	}
 
-		// The norm matched filter distance  is the Euclidean distance between the vectors
-		dist = 2 - 2/(qN0*sk)*DD // squared Euclidean distance
-		dRadius = math.Abs(dist) // Distance from search radius
-		// Perform min-dist search
-		if dRadius < minD { // prefer matches at front
-			minD = dRadius
-			minDist = dist
-			winner = dpp
+	// Make Correlation matrix entry for this frame against entire source database
+	for dpp := 0; dpp < dr.Frames; dpp++ {
+		for ins := 0; ins < x; ins++ {
+
+			sk := 0.0 // TODO: more efficient with a SeriesSum
+			DD := 0.0
+			for muxi := 0; muxi < s.ShingleSize; muxi++ {
+				m := (front + muxi) % s.ShingleSize
+				if dbShingles[m] == nil {
+					break
+				}
+				for _, qp := range s.ChosenFeatures {
+					sk += dbShingles[m][qp] * dbShingles[m][qp]
+					DD += s.InShingles[ins*s.ShingleSize+muxi][qp] * dbShingles[m][qp]
+				}
+			}
+			sk = math.Sqrt(sk)
+
+			// The norm matched filter distance is the Euclidean distance between the vectors squared Euclidean distance
+			dRadius := math.Abs(2 - 2*DD/(qN[ins]*sk))
+
+			// Perform min-dist search
+			if (fileWinners[ins] == Winner{}) || dRadius < fileWinners[ins].MinDist {
+				fileWinners[ins] = Winner{
+					Filename: wavFileName,
+					MinDist:  dRadius,
+					Winner:   dpp,
+				}
+			}
 		}
 
-		if dpp+s.ShingleSize < dr.frames {
+		if dpp+s.ShingleSize < dr.Frames {
 			dbShingles[front], err = dr.Dat()
 			if err != nil {
-				return 0, 0.0, err
+				return nil, err
 			}
 		} else {
 			dbShingles[front] = nil
 		}
 		front = (front + 1) % s.ShingleSize
 	}
-	return winner, minDist, nil
+	return fileWinners, nil
 }

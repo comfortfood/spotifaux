@@ -147,12 +147,12 @@ func sourceDatToRecipe(sourceDatFileName string, s *spotifaux.SoundSpotter) {
 	if err != nil {
 		panic(err)
 	}
+	defer recipe.Close()
 
 	_, err = recipe.WriteString("{\"recipe\":[\n")
 	if err != nil {
 		panic(err)
 	}
-	defer recipe.Close()
 
 	winners, err := getWinners(s)
 	if err != nil {

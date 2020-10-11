@@ -152,9 +152,9 @@ func (e *FeatureExtractor) ExtractSeriesOfVectors(wavFileName, datFileName strin
 		return err
 	}
 
-	features := make([][]float64, frames)
+	features := make([][]uint8, frames)
 	for i := 0; i < frames; i++ {
-		features[i] = make([]float64, e.CqtN)
+		features[i] = make([]uint8, e.CqtN)
 		buf := make([]float64, WindowLength)
 		for j := 0; j < WindowLength; j++ {
 			val := 0.0
@@ -167,11 +167,11 @@ func (e *FeatureExtractor) ExtractSeriesOfVectors(wavFileName, datFileName strin
 		e.extractVector(buf, features[i])
 	}
 
-	return writeFeatures(datFileName, frames, e.CqtN, features)
+	return writeFeatures(datFileName, frames, features)
 }
 
 // extract feature vectors from MONO input buffer
-func (e *FeatureExtractor) extractVector(buf, outputFeatures []float64) {
+func (e *FeatureExtractor) extractVector(buf []float64, outputFeatures []uint8) {
 
 	j := 0
 	for ; j < WindowLength; j++ {
@@ -185,7 +185,7 @@ func (e *FeatureExtractor) extractVector(buf, outputFeatures []float64) {
 	e.computeMFCC(outputFeatures) // extract MFCC and place result in outputFeatures
 }
 
-func (e *FeatureExtractor) computeMFCC(outs1 []float64) {
+func (e *FeatureExtractor) computeMFCC(outs1 []uint8) {
 
 	e.fftwPlan.Execute()
 
@@ -211,15 +211,35 @@ func (e *FeatureExtractor) computeMFCC(outs1 []float64) {
 		cqtOut[i] = math.Log10(cqtOut[i])
 	}
 
+	maxOuts1 := math.SmallestNonzeroFloat64
+	minOuts1 := math.MaxFloat64
+	tmp := make([]float64, e.CqtN)
 	for i := 0; i < e.CqtN; i++ {
-		outs1[i] = 0.0
+		tmp[i] = 0.0
 		for j := 0; j < e.CqtN; j++ {
-			outs1[i] += cqtOut[j] * e.DCT[i*e.CqtN+j]
+			tmp[i] += cqtOut[j] * e.DCT[i*e.CqtN+j]
 		}
+		if tmp[i] > maxOuts1 {
+			maxOuts1 = tmp[i]
+		}
+		if tmp[i] < minOuts1 {
+			minOuts1 = tmp[i]
+		}
+	}
+	for i := 0; i < e.CqtN; i++ {
+		absMin := math.Abs(minOuts1)
+		absMax := math.Abs(maxOuts1)
+		span := 0.0
+		if absMax > absMin {
+			span = absMax
+		} else {
+			span = absMin
+		}
+		outs1[i] = uint8((tmp[i] - minOuts1) / (2 * span) * 255)
 	}
 }
 
-func writeFeatures(datFileName string, frames, numFeatures int, features [][]float64) error {
+func writeFeatures(datFileName string, frames int, features [][]uint8) error {
 
 	f, err := os.Create(datFileName)
 	if err != nil {
@@ -235,11 +255,7 @@ func writeFeatures(datFileName string, frames, numFeatures int, features [][]flo
 	}
 
 	for i := 0; i < frames; i++ {
-		b := make([]byte, 8*numFeatures)
-		for j, feature := range features[i] {
-			binary.LittleEndian.PutUint64(b[8*j:8+8*j], math.Float64bits(feature))
-		}
-		_, err = f.Write(b)
+		_, err = f.Write(features[i])
 		if err != nil {
 			return err
 		}

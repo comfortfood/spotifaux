@@ -2,7 +2,6 @@ package spotifaux
 
 import (
 	"encoding/binary"
-	"math"
 	"os"
 )
 
@@ -34,7 +33,7 @@ func NewDatReader(fileName string, cqtN int) (*datReader, error) {
 }
 
 func (r *datReader) Dat() ([]float64, error) {
-	b := make([]byte, 8*r.cqtN)
+	b := make([]uint8, r.cqtN)
 	_, err := r.f.Read(b)
 	if err != nil {
 		return nil, err
@@ -43,7 +42,7 @@ func (r *datReader) Dat() ([]float64, error) {
 	features := make([]float64, r.cqtN)
 
 	for i := 0; i < r.cqtN; i++ {
-		features[i] = math.Float64frombits(binary.LittleEndian.Uint64(b[8*i : 8+8*i]))
+		features[i] = (float64(b[i]) - 128.0) / 255.0
 	}
 
 	return features, nil

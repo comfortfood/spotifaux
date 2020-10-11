@@ -14,6 +14,7 @@ import (
 	"os"
 	"spotifaux"
 	"strings"
+	"time"
 )
 
 func getDBDirname() string {
@@ -25,7 +26,7 @@ func getDBDirname() string {
 }
 
 func main() {
-	sourceWavFileName := "/Users/wyatttall/git/spotifaux/recreate/this-is-short.wav"
+	sourceWavFileName := "/Users/wyatttall/git/spotifaux/recreate/kick.wav"
 
 	e := spotifaux.NewFeatureExtractor(spotifaux.SAMPLE_RATE)
 	s := &spotifaux.SoundSpotter{
@@ -35,14 +36,14 @@ func main() {
 	}
 
 	//dbMp3sToWavs()
-	//dbWavsToDats(e)
+	dbWavsToDats(e)
 
-	//err := e.ExtractSeriesOfVectors(sourceWavFileName, toDat(sourceWavFileName))
-	//if err != nil {
-	//	panic(err)
-	//}
+	err := e.ExtractSeriesOfVectors(sourceWavFileName, toDat(sourceWavFileName))
+	if err != nil {
+		panic(err)
+	}
 
-	//sourceDatToRecipe(toDat(sourceWavFileName), s)
+	sourceDatToRecipe(toDat(sourceWavFileName), s)
 	recipeToOutput(sourceWavFileName, s)
 }
 
@@ -143,6 +144,52 @@ func sourceDatToRecipe(sourceDatFileName string, s *spotifaux.SoundSpotter) {
 		panic(err)
 	}
 
+	dirname := getDBDirname()
+	files, err := ioutil.ReadDir(dirname)
+	if err != nil {
+		panic(err)
+	}
+
+	x = len(s.InShingles) / s.ShingleSize
+	if len(s.InShingles)%s.ShingleSize > 0 {
+		x++
+	}
+
+	totalTime := time.Duration(0)
+	wavCount := 0
+
+	winners := make([]spotifaux.Winner, x)
+	for i, fi := range files {
+		if strings.HasSuffix(fi.Name(), ".wav") {
+
+			start := time.Now()
+			wavFileName := dirname + "/" + fi.Name()
+			fileWinners, err := spotifaux.Match(wavFileName, toDat(wavFileName), s)
+			if err != nil {
+				panic(err)
+			}
+
+			subs := 0
+			for w := 0; w < len(winners); w++ {
+				if (winners[w] == spotifaux.Winner{}) || fileWinners[w].MinDist < winners[w].MinDist {
+					winners[w] = fileWinners[w]
+					subs++
+				}
+			}
+
+			writeRecipe(winners) // overwrite recipe each time
+
+			totalTime += time.Since(start)
+			wavCount++
+			estDone := time.Now().Add(totalTime / time.Duration(wavCount) * time.Duration((len(files)-i)/3))
+
+			fmt.Printf("  %d of %d %s subs %d/%d estDone %s\n", i, len(files), fi.Name(), subs, x,
+				estDone.Format("15:04:05"))
+		}
+	}
+}
+
+func writeRecipe(winners []spotifaux.Winner) {
 	recipe, err := os.Create("recipe.json")
 	if err != nil {
 		panic(err)
@@ -150,11 +197,6 @@ func sourceDatToRecipe(sourceDatFileName string, s *spotifaux.SoundSpotter) {
 	defer recipe.Close()
 
 	_, err = recipe.WriteString("{\"recipe\":[\n")
-	if err != nil {
-		panic(err)
-	}
-
-	winners, err := getWinners(s)
 	if err != nil {
 		panic(err)
 	}
@@ -176,40 +218,6 @@ func sourceDatToRecipe(sourceDatFileName string, s *spotifaux.SoundSpotter) {
 	if err != nil {
 		panic(err)
 	}
-}
-
-func getWinners(s *spotifaux.SoundSpotter) ([]spotifaux.Winner, error) {
-
-	dirname := getDBDirname()
-	files, err := ioutil.ReadDir(dirname)
-	if err != nil {
-		return nil, err
-	}
-
-	x := len(s.InShingles) / s.ShingleSize
-	if len(s.InShingles)%s.ShingleSize > 0 {
-		x++
-	}
-	winners := make([]spotifaux.Winner, x)
-	for i, fi := range files {
-		if strings.HasSuffix(fi.Name(), ".wav") {
-
-			fmt.Printf("  %d of %d %s\n", i, len(files), fi.Name())
-
-			wavFileName := dirname + "/" + fi.Name()
-			fileWinners, err := spotifaux.Match(wavFileName, toDat(wavFileName), s)
-			if err != nil {
-				return nil, err
-			}
-
-			for w := 0; w < len(winners); w++ {
-				if (winners[w] == spotifaux.Winner{}) || fileWinners[w].MinDist < winners[w].MinDist {
-					winners[w] = fileWinners[w]
-				}
-			}
-		}
-	}
-	return winners, nil
 }
 
 func recipeToOutput(sourceWavFileName string, s *spotifaux.SoundSpotter) {
